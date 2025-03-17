@@ -6,6 +6,7 @@
 #include <cmath>
 #include <cstring>
 
+#define BOUND(x, min, max) ((x) < (min)) ? (min) : ((x) > (max)) ? (max) : (x)
 
 struct Color {
     union {
@@ -167,7 +168,7 @@ static inline Color clampPixelFloat(Color e) {
 static const float kMaxPixelFloatHdrLinear = 10000.0f / 203.0f;
 
 static inline float clampPixelFloatLinear(float value) {
-  return CLIP3(value, 0.0f, kMaxPixelFloatHdrLinear);
+  return BOUND(value, 0.0f, kMaxPixelFloatHdrLinear);
 }
 
 static inline Color clampPixelFloatLinear(Color e) {
@@ -189,7 +190,6 @@ static inline Color sanitizePixel(Color e) {
   return {{{r, g, b}}};
 }
 
-std::unique_ptr<uhdr_raw_image_ext_t> copy_raw_image(uhdr_raw_image_t* src);
+#endif
 
-uhdr_error_info_t copy_raw_image(uhdr_raw_image_t* src, uhdr_raw_image_t* dst);
 #endif

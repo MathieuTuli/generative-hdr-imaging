@@ -2,12 +2,12 @@
 
 #include <iostream>
 
-#include "gui_utils.hpp"
+#include "_gui_utils.hpp"
 
 #include "imgui.h"
-#include "math.h"
 #include "imgui_impl_glfw.h"
 #include "imgui_impl_opengl3.h"
+#include "math.h"
 
 #if defined(IMGUI_IMPL_OPENGL_ES2)
 #include <GLES2/gl2.h>
@@ -172,7 +172,7 @@ void quit() {
     glfwTerminate();
 }
 
-extern "C" int main(int argc, char **argv) {
+extern "C" int _main(int argc, char **argv) {
     G_WIDTH = 1000;
     G_HEIGHT = 750;
     if (init() != 0)

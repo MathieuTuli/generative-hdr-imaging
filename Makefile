@@ -1,5 +1,5 @@
 # -- main variables
-EXE := main
+EXE := radiantflow
 SRC_DIRS := ./src
 LIBS_DIR := ./libs
 BUILD_DIR := ./build
