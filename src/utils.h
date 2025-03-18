@@ -2,6 +2,7 @@
 #define UTILS_HPP
 
 #include <string>
+
 namespace utils {
 
 struct Error {

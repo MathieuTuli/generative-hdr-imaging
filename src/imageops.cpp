@@ -1,14 +1,30 @@
 #include "imageops.hpp"
 #include "utils.h"
 #include <algorithm>
+#include <iostream>
+#include <cassert>
 #include <cmath>
 #include <filesystem>
 #include <memory>
 #include <png.h>
 #include <vector>
 
+#define ASSERT(condition, fmt, ...) \
+    do { \
+        if (!(condition)) { \
+            char buffer[1024]; \
+            std::snprintf(buffer, sizeof(buffer), fmt, ##__VA_ARGS__); \
+            std::cerr << "Assertion failed: " << #condition << ", " << buffer \
+                      << ", file " << __FILE__ << ", line " << __LINE__ << std::endl; \
+            std::abort(); \
+        } \
+    } while (false)
+
 namespace imageops {
 
+// ----------------------------------------
+// BASIC IO
+// ----------------------------------------
 bool HasExtension(const std::string &filename, const std::string &ext) {
     std::filesystem::path path(filename);
     std::string file_ext = path.extension().string();
@@ -37,107 +53,97 @@ HDRFormat DetectFormat(const std::string &filename) {
     return HDRFormat::UNKNOWN;
 }
 
-SDRConversionParams UpdateSDRParams(const SDRConversionParams &base_params,
-                                    const ImageMetadata &metadata) {
-    SDRConversionParams updated_params = base_params;
+// ----------------------------------------
+// INVOLVED IO
+// ----------------------------------------
 
-    // For HLG content, adjust parameters specifically for HLG to SDR conversion
-    if (metadata.transfer_function == "HLG") {
-        // HLG is designed for a peak brightness of 1000 nits
-        updated_params.max_nits = metadata.luminance > 0 ? metadata.luminance : 1000.0;
-        updated_params.target_nits = 100.0; // Standard SDR brightness
-        
-        // Use Hable tone mapping for better highlight handling
-        updated_params.tone_mapping = ToneMapping::HABLE;
-        
-        // More conservative highlight preservation
-        updated_params.preserve_highlights = true;
-        updated_params.knee_point = 0.75; // Higher knee point for softer highlight compression
-        
-        // More conservative exposure adjustment
-        updated_params.exposure = std::log2(100.0 / updated_params.max_nits);
-        
-        // Disable auto-clipping by default
-        updated_params.auto_clip = false;
-        updated_params.clip_low = 0.0;
-        updated_params.clip_high = 1.0;
-    }
-
-    // For Display P3 color space, adjust parameters for wider gamut
-    if (metadata.color_space == "Display P3") {
-        // P3 has wider gamut, so we need more aggressive tone mapping
-        if (updated_params.tone_mapping == ToneMapping::GAMMA) {
-            updated_params.tone_mapping = ToneMapping::HABLE;
-        }
-        
-        // Adjust gamma to maintain contrast after gamut mapping
-        updated_params.gamma = metadata.gamma > 0 ? metadata.gamma * 1.1 : 2.4;
-    }
-
-    // For high luminance content (> 100 nits), adjust parameters
-    if (metadata.luminance > 100.0) {
-        // Scale exposure based on luminance ratio
-        double luminance_ratio = metadata.luminance / 100.0;
-        updated_params.exposure *= std::log2(luminance_ratio) * 0.5;
-        
-        // More aggressive highlight preservation for very bright content
-        if (metadata.luminance > 1000.0) {
-            updated_params.knee_point = 0.55; // Even lower knee point for very bright content
-            updated_params.preserve_highlights = true;
-        }
-    }
-
-    // Adjust based on rendering intent
-    if (metadata.rendering_intent == "absolute-colorimetric") {
-        // For absolute colorimetric intent, preserve color accuracy
-        updated_params.preserve_highlights = true;
-        updated_params.knee_point = std::max(0.7, updated_params.knee_point);
-        updated_params.tone_mapping = ToneMapping::ACES; // ACES works well for color accuracy
-    } else if (metadata.rendering_intent == "relative-colorimetric") {
-        // For relative colorimetric, balance between accuracy and aesthetics
-        updated_params.preserve_highlights = true;
-        updated_params.tone_mapping = ToneMapping::HABLE;
-    } else {
-        // For perceptual intent, optimize for visual appeal
-        updated_params.tone_mapping = ToneMapping::LOTTES;
-        updated_params.exposure *= 1.1; // Slightly brighter for better perceptual mapping
-    }
-
-    return updated_params;
-}
-// Helper function for HLG EOTF conversion
-double HLGtoLinear(double x) {
-    const double a = 0.17883277;
-    const double b = 0.28466892;
-    const double c = 0.55991073;
-    
-    // Ensure input is in valid range
-    x = std::max(0.0, std::min(1.0, x));
-    
-    if (x <= 0.5) {
-        return (x * x) / 3.0;
-    } else {
-        return ((std::exp((x - c) / a) + b) / 12.0);
-    }
+void LoadAVIF(const std::string &filename, utils::Error &error) {
+    // TODO: Implement AVIF loading using libavif
+    error = {true, "AVIF loading not implemented"};
 }
 
-// Helper function for P3 to sRGB color space conversion
-void P3toSRGB(double& r, double& g, double& b) {
-    // Display P3 to sRGB conversion matrix (D65 white point)
-    const double matrix[3][3] = {
-        { 1.2249401, -0.2249404, 0.0000003},
-        {-0.0420569,  1.0420571, -0.0000002},
-        {-0.0196376, -0.0786361, 1.0982735}
-    };
-    
-    // Apply color space conversion
-    double new_r = matrix[0][0] * r + matrix[0][1] * g + matrix[0][2] * b;
-    double new_g = matrix[1][0] * r + matrix[1][1] * g + matrix[1][2] * b;
-    double new_b = matrix[2][0] * r + matrix[2][1] * g + matrix[2][2] * b;
-    
-    r = new_r;
-    g = new_g;
-    b = new_b;
+std::unique_ptr<PNGImage> LoadHDRPNG(const std::string &filename,
+                                     utils::Error &error) {
+    FILE *fp = fopen(filename.c_str(), "rb");
+    if (!fp) {
+        error = {true, "Failed to open file: " + filename};
+        return nullptr;
+    }
+
+    png_structp png = png_create_read_struct(PNG_LIBPNG_VER_STRING, nullptr,
+                                             nullptr, nullptr);
+    if (!png) {
+        fclose(fp);
+        error = {true, "Failed to create PNG read struct"};
+        return nullptr;
+    }
+
+    png_infop info = png_create_info_struct(png);
+    if (!info) {
+        png_destroy_read_struct(&png, nullptr, nullptr);
+        fclose(fp);
+        error = {true, "Failed to create PNG info struct"};
+        return nullptr;
+    }
+
+    if (setjmp(png_jmpbuf(png))) {
+        png_destroy_read_struct(&png, &info, nullptr);
+        fclose(fp);
+        error = {true, "Error during PNG read"};
+        return nullptr;
+    }
+
+    png_init_io(png, fp);
+    png_read_info(png, info);
+    if (png_get_bit_depth(png, info) != 16) {
+        png_destroy_read_struct(&png, &info, nullptr);
+        fclose(fp);
+        error = {true, "Input png file is not 16-bit depth"};
+        return nullptr;
+    }
+
+    std::unique_ptr<PNGImage> image = std::make_unique<PNGImage>();
+
+    image->width = png_get_image_width(png, info);
+    image->height = png_get_image_height(png, info);
+    image->color_type = png_get_color_type(png, info);
+    image->bit_depth = png_get_bit_depth(png, info);
+    image->bytes_per_row = png_get_rowbytes(png, info);
+
+    png_read_update_info(png, info);
+
+    image->row_pointers =
+        (png_bytep *)malloc(sizeof(png_bytep) * image->height);
+
+    for (size_t i = 0; i < image->height; i++) {
+        image->row_pointers[i] = (png_byte *)malloc(image->bytes_per_row);
+    }
+    png_read_image(png, image->row_pointers);
+
+    png_destroy_read_struct(&png, &info, nullptr);
+    fclose(fp);
+
+    return image;
+}
+
+ImageMetadata ReadMetadata(const std::string &filename, HDRFormat format,
+                           utils::Error &error) {
+    switch (format) {
+    case HDRFormat::AVIF:
+        return ReadAVIFMetadata(filename, error);
+    case HDRFormat::PNG_HDR:
+        return ReadHDRPNGMetadata(filename, error);
+    default:
+        error = {true, "Unsupported format for metadata"};
+        return ImageMetadata{};
+    }
+}
+
+ImageMetadata ReadAVIFMetadata(const std::string &filename,
+                               utils::Error &error) {
+    // TODO: Implement AVIF metadata reading
+    error = {true, "AVIF metadata reading not implemented"};
+    return ImageMetadata{};
 }
 
 ImageMetadata ReadHDRPNGMetadata(const std::string &filename,
@@ -146,17 +152,17 @@ ImageMetadata ReadHDRPNGMetadata(const std::string &filename,
     // Set default values for P3 HLG
     metadata.color_space = "Display P3";
     metadata.transfer_function = "HLG";
-    metadata.gamma = 1.0f;  // HLG has its own EOTF
-    metadata.luminance = 1000.0f;  // Typical HLG peak luminance
+    metadata.gamma = 1.0f;        // HLG has its own EOTF
+    metadata.luminance = 1000.0f; // Typical HLG peak luminance
     // P3 chromaticity coordinates
-    metadata.primaries[0] = 0.680f;  // P3 Red x
-    metadata.primaries[1] = 0.320f;  // P3 Red y
-    metadata.primaries[2] = 0.265f;  // P3 Green x
-    metadata.primaries[3] = 0.690f;  // P3 Green y
-    metadata.primaries[4] = 0.150f;  // P3 Blue x
-    metadata.primaries[5] = 0.060f;  // P3 Blue y
-    metadata.white_point[0] = 0.3127f;  // D65 x
-    metadata.white_point[1] = 0.3290f;  // D65 y
+    metadata.primaries[0] = 0.680f;    // P3 Red x
+    metadata.primaries[1] = 0.320f;    // P3 Red y
+    metadata.primaries[2] = 0.265f;    // P3 Green x
+    metadata.primaries[3] = 0.690f;    // P3 Green y
+    metadata.primaries[4] = 0.150f;    // P3 Blue x
+    metadata.primaries[5] = 0.060f;    // P3 Blue y
+    metadata.white_point[0] = 0.3127f; // D65 x
+    metadata.white_point[1] = 0.3290f; // D65 y
     FILE *fp = fopen(filename.c_str(), "rb");
     if (!fp) {
         error = {true, "Failed to open file: " + filename};
@@ -249,123 +255,6 @@ ImageMetadata ReadHDRPNGMetadata(const std::string &filename,
     return metadata;
 }
 
-// RawImageData LoadImage(const std::string &filename, utils::Error &error) {
-//     HDRFormat format = DetectFormat(filename);
-//     switch (format) {
-//     case HDRFormat::AVIF:
-//         return LoadAVIF(filename, error);
-//     case HDRFormat::PNG_HDR:
-//         return LoadHDRPNG(filename, error);
-//     default:
-//         error = {true, "Unsupported format"};
-//         return HDRImage{};
-//     }
-// }
-
-void LoadAVIF(const std::string &filename, utils::Error &error) {
-    // TODO: Implement AVIF loading using libavif
-    error = {true, "AVIF loading not implemented"};
-}
-
-std::unique_ptr<PNGImage> LoadHDRPNG(const std::string &filename,
-                                     utils::Error &error) {
-    FILE *fp = fopen(filename.c_str(), "rb");
-    if (!fp) {
-        error = {true, "Failed to open file: " + filename};
-        return nullptr;
-    }
-
-    png_structp png = png_create_read_struct(PNG_LIBPNG_VER_STRING, nullptr,
-                                             nullptr, nullptr);
-    if (!png) {
-        fclose(fp);
-        error = {true, "Failed to create PNG read struct"};
-        return nullptr;
-    }
-
-    png_infop info = png_create_info_struct(png);
-    if (!info) {
-        png_destroy_read_struct(&png, nullptr, nullptr);
-        fclose(fp);
-        error = {true, "Failed to create PNG info struct"};
-        return nullptr;
-    }
-
-    if (setjmp(png_jmpbuf(png))) {
-        png_destroy_read_struct(&png, &info, nullptr);
-        fclose(fp);
-        error = {true, "Error during PNG read"};
-        return nullptr;
-    }
-
-    png_init_io(png, fp);
-    png_read_info(png, info);
-    if (png_get_bit_depth(png, info) != 16) {
-        png_destroy_read_struct(&png, &info, nullptr);
-        fclose(fp);
-        error = {true, "Input png file is not 16-bit depth"};
-        return nullptr;
-    }
-
-    std::unique_ptr<PNGImage> image = std::make_unique<PNGImage>();
-
-    image->width = png_get_image_width(png, info);
-    image->height = png_get_image_height(png, info);
-    image->color_type = png_get_color_type(png, info);
-    image->bit_depth = png_get_bit_depth(png, info);
-    image->bytes_per_row = png_get_rowbytes(png, info);
-
-    png_read_update_info(png, info);
-
-    image->row_pointers =
-        (png_bytep *)malloc(sizeof(png_bytep) * image->height);
-
-    for (size_t i = 0; i < image->height; i++) {
-        image->row_pointers[i] = (png_byte *)malloc(image->bytes_per_row);
-    }
-    png_read_image(png, image->row_pointers);
-
-    png_destroy_read_struct(&png, &info, nullptr);
-    fclose(fp);
-
-    return image;
-}
-
-ImageMetadata ReadMetadata(const std::string &filename, HDRFormat format,
-                           utils::Error &error) {
-    switch (format) {
-    case HDRFormat::AVIF:
-        return ReadAVIFMetadata(filename, error);
-    case HDRFormat::PNG_HDR:
-        return ReadHDRPNGMetadata(filename, error);
-    default:
-        error = {true, "Unsupported format for metadata"};
-        return ImageMetadata{};
-    }
-}
-
-ImageMetadata ReadAVIFMetadata(const std::string &filename,
-                               utils::Error &error) {
-    // TODO: Implement AVIF metadata reading
-    error = {true, "AVIF metadata reading not implemented"};
-    return ImageMetadata{};
-}
-
-bool WritetoRAW(const std::unique_ptr<RawImageData> &image,
-                const std::string &filename, utils::Error &error) {
-    if (!image) {
-        error = {true, "Invalid image pointer"};
-        return false;
-    }
-
-    FILE *fp = fopen(filename.c_str(), "wb");
-    if (!fp) {
-        error = {true, "Could not open file for writing: " + filename};
-        return false;
-    }
-    return false;
-}
-
 bool WritetoPNG(const std::unique_ptr<PNGImage> &image,
                 const std::string &filename, utils::Error &error) {
     if (!image) {
@@ -431,53 +320,58 @@ bool WritetoPNG(const std::unique_ptr<PNGImage> &image,
     return true;
 }
 
-std::unique_ptr<RawImageData>
-HDRPNGtoRAW(const std::unique_ptr<PNGImage> &image,
-            const HDRProcessingParams &params, utils::Error &error) {
-    if (!image) {
-        error = {true, "Invalid input image"};
-        return nullptr;
+// ----------------------------------------
+// CONVERSION
+// ----------------------------------------
+double LineartoHLG(double x) {
+    const double a = 0.17883277;
+    const double b = 1.0 - 4.0 * a;               // 0.28466892;
+    const double c = 0.5 - a * std::log(4.0 * a); // 0.55991073;
+
+    const double epsilon = 1e-6;  // Define a small epsilon for floating point comparison
+    ASSERT(-epsilon <= x && x <= (1.0 + epsilon), "Input should be in range [0, 1] for Rec2020, from %f", x);
+    // x = std::max(0.0, std::min(1.0, x));
+
+    if (x <= 1.0 / 12.0) {
+        return std::sqrt(3 * x);
+    } else {
+        return a * std::log(12.0 * x - b) + c;
     }
+}
 
-    std::unique_ptr<RawImageData> raw_image = std::make_unique<RawImageData>();
-    raw_image->width = image->width;
-    raw_image->height = image->height;
-    raw_image->channels = (image->color_type == PNG_COLOR_TYPE_RGBA) ? 4 : 3;
-    raw_image->bits_per_channel = image->bit_depth;
-    raw_image->is_float = false; // PNG data is always integer
-    raw_image->is_big_endian = false;
+double HLGtoLinear(double x) {
+    const double a = 0.17883277;
+    const double b = 1.0 - 4.0 * a;               // 0.28466892;
+    const double c = 0.5 - a * std::log(4.0 * a); // 0.55991073;
 
-    // Calculate size and allocate buffer
-    size_t pixel_count = image->width * image->height;
-    size_t bytes_per_channel = image->bit_depth / 8;
-    size_t bytes_per_pixel = bytes_per_channel * raw_image->channels;
-    raw_image->data.resize(pixel_count * bytes_per_pixel);
+    const double epsilon = 1e-6;  // Define a small epsilon for floating point comparison
+    ASSERT(-epsilon <= x && x <= (1.0 + epsilon), "Input should be in range [0, 1] for Rec2020, from %f", x);
+    // x = std::max(0.0, std::min(1.0, x));
 
-    // Copy and convert data
-    size_t dst_pos = 0;
-    size_t src_bytes_per_pixel = image->bytes_per_row / image->width;
-
-    for (size_t y = 0; y < image->height; y++) {
-        const png_bytep src_row = image->row_pointers[y];
-        for (size_t x = 0; x < image->width; x++) {
-            const png_bytep pixel = src_row + (x * src_bytes_per_pixel);
-
-            // For 16-bit depth, properly copy each 16-bit component
-            if (image->bit_depth == 16) {
-                for (size_t c = 0; c < raw_image->channels; c++) {
-                    raw_image->data[dst_pos++] = pixel[c * 2];     // MSB
-                    raw_image->data[dst_pos++] = pixel[c * 2 + 1]; // LSB
-                }
-            } else {
-                // For 8-bit depth, straight copy
-                for (size_t c = 0; c < raw_image->channels; c++) {
-                    raw_image->data[dst_pos++] = pixel[c];
-                }
-            }
-        }
+    if (x <= 0.5) {
+        return (x * x) / 3.0;
+    } else {
+        return (std::exp((x - c) / a) + b) / 12.0;
     }
+}
 
-    return raw_image;
+// Helper function for Rec.2020 to sRGB color space conversion
+void Rec2020toSRGB(double &r, double &g, double &b) {
+    // Rec.2020 to sRGB conversion matrix (D65 white point)
+    // These values are derived from the standard RGB primaries and white point
+    const double matrix[3][3] = {{1.6605, -0.5876, -0.0728},
+                                 {-0.1246, 1.1329, -0.0083},
+                                 {-0.0182, -0.1006, 1.1187}};
+
+    // Apply color space conversion
+    double new_r = matrix[0][0] * r + matrix[0][1] * g + matrix[0][2] * b;
+    double new_g = matrix[1][0] * r + matrix[1][1] * g + matrix[1][2] * b;
+    double new_b = matrix[2][0] * r + matrix[2][1] * g + matrix[2][2] * b;
+
+    // Clamp values to [0,1] range after conversion
+    r = std::max(0.0, std::min(1.0, new_r));
+    g = std::max(0.0, std::min(1.0, new_g));
+    b = std::max(0.0, std::min(1.0, new_b));
 }
 
 std::unique_ptr<PNGImage> HDRtoSDR(const std::unique_ptr<PNGImage> &hdr_image,
@@ -489,7 +383,8 @@ std::unique_ptr<PNGImage> HDRtoSDR(const std::unique_ptr<PNGImage> &hdr_image,
     }
 
     // Validate input parameters for HLG P3 conversion
-    const double target_nits = params.target_nits > 0 ? params.target_nits : 100.0;
+    const double target_nits =
+        params.target_nits > 0 ? params.target_nits : 100.0;
     const double max_nits = params.max_nits > 0 ? params.max_nits : 100.0;
     const double luminance_scale = target_nits / max_nits;
 
@@ -513,9 +408,11 @@ std::unique_ptr<PNGImage> HDRtoSDR(const std::unique_ptr<PNGImage> &hdr_image,
 
     // Process each pixel
     const double gamma = params.gamma > 0 ? params.gamma : 2.2; // Default gamma
-    const double exposure = params.exposure > 0 ? params.exposure : 1.0; // Default exposure
-    const size_t channels = (hdr_image->color_type == PNG_COLOR_TYPE_RGBA) ? 4 : 3;
-    
+    const double exposure =
+        params.exposure > 0 ? params.exposure : 1.0; // Default exposure
+    const size_t channels =
+        (hdr_image->color_type == PNG_COLOR_TYPE_RGBA) ? 4 : 3;
+
     // Pre-calculate exposure adjustment
     const double exposure_scale = std::pow(2.0, exposure);
 
@@ -579,8 +476,10 @@ std::unique_ptr<PNGImage> HDRtoSDR(const std::unique_ptr<PNGImage> &hdr_image,
                 g = std::min(1.0, std::max(0.0, g));
                 b = std::min(1.0, std::max(0.0, b));
 
-                // Apply HLG EOTF to get linear values with more conservative scaling
-                r = HLGtoLinear(r) * 0.8; // Reduce intensity by 20% to prevent highlight blowout
+                // Apply HLG EOTF to get linear values with more conservative
+                // scaling
+                r = HLGtoLinear(r) *
+                    0.8; // Reduce intensity by 20% to prevent highlight blowout
                 g = HLGtoLinear(g) * 0.8;
                 b = HLGtoLinear(b) * 0.8;
 
@@ -590,11 +489,12 @@ std::unique_ptr<PNGImage> HDRtoSDR(const std::unique_ptr<PNGImage> &hdr_image,
                 g *= display_scale;
                 b *= display_scale;
 
-                // Convert from P3 to sRGB color space with highlight protection
+                // Convert from Rec.2020 to sRGB color space with highlight
+                // protection
                 double max_rgb_pre = std::max({r, g, b});
-                P3toSRGB(r, g, b);
+                Rec2020toSRGB(r, g, b);
                 double max_rgb_post = std::max({r, g, b});
-                
+
                 // Preserve relative highlight ratios
                 if (max_rgb_post > max_rgb_pre && max_rgb_pre > 0) {
                     double scale = max_rgb_pre / max_rgb_post;
@@ -608,9 +508,14 @@ std::unique_ptr<PNGImage> HDRtoSDR(const std::unique_ptr<PNGImage> &hdr_image,
                     double max_rgb = std::max({r, g, b});
                     if (max_rgb > params.knee_point) {
                         // Smooth roll-off for highlights
-                        double ratio = (max_rgb - params.knee_point) / (1.0 - params.knee_point);
-                        double scale = params.knee_point + (1.0 - params.knee_point) * 
-                                     (1.0 - std::exp(-ratio * 4.0)); // Adjustable roll-off speed
+                        double ratio = (max_rgb - params.knee_point) /
+                                       (1.0 - params.knee_point);
+                        double scale =
+                            params.knee_point +
+                            (1.0 - params.knee_point) *
+                                (1.0 -
+                                 std::exp(-ratio *
+                                          4.0)); // Adjustable roll-off speed
                         r *= scale / max_rgb;
                         g *= scale / max_rgb;
                         b *= scale / max_rgb;
@@ -654,7 +559,7 @@ std::unique_ptr<PNGImage> HDRtoSDR(const std::unique_ptr<PNGImage> &hdr_image,
                     const double D = 0.59;
                     const double E = 0.14;
                     tone_mapped = (clipped * (A * clipped + B)) /
-                                (clipped * (C * clipped + D) + E);
+                                  (clipped * (C * clipped + D) + E);
                     break;
                 }
                 case ToneMapping::ACES: {
@@ -664,9 +569,10 @@ std::unique_ptr<PNGImage> HDRtoSDR(const std::unique_ptr<PNGImage> &hdr_image,
                     const double c = 2.43;
                     const double d = 0.59;
                     const double e = 0.14;
-                    double adjusted = clipped * 0.6; // Exposure adjustment for ACES
+                    double adjusted =
+                        clipped * 0.6; // Exposure adjustment for ACES
                     tone_mapped = (adjusted * (adjusted + b) * a) /
-                                (adjusted * (adjusted * c + d) + e);
+                                  (adjusted * (adjusted * c + d) + e);
                     break;
                 }
                 case ToneMapping::UNCHARTED2: {
@@ -681,11 +587,12 @@ std::unique_ptr<PNGImage> HDRtoSDR(const std::unique_ptr<PNGImage> &hdr_image,
 
                     auto uncharted2_tonemap = [=](double x) -> double {
                         return ((x * (A * x + C * B) + D * E) /
-                               (x * (A * x + B) + D * F)) -
+                                (x * (A * x + B) + D * F)) -
                                E / F;
                     };
 
-                    tone_mapped = uncharted2_tonemap(clipped) / uncharted2_tonemap(W);
+                    tone_mapped =
+                        uncharted2_tonemap(clipped) / uncharted2_tonemap(W);
                     break;
                 }
                 case ToneMapping::DRAGO: {
@@ -725,10 +632,9 @@ std::unique_ptr<PNGImage> HDRtoSDR(const std::unique_ptr<PNGImage> &hdr_image,
 
                     auto hable = [=](double x) -> double {
                         return (x * (A * x + C * B) + D * E) /
-                               (x * (A * x + B) + D * F) -
+                                   (x * (A * x + B) + D * F) -
                                E / F;
                     };
-
 
                     tone_mapped = hable(clipped) / hable(W);
                     break;

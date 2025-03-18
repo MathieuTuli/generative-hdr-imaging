@@ -1,6 +1,23 @@
 #include "../src/imageops.hpp"
 #include "../src/utils.h"
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/matchers/catch_matchers_floating_point.hpp>
+
+TEST_CASE("Helpers", "[imageops]") {
+    double base = 10.0;
+    double x;
+    for (int i = 0; i < 11; i++){
+        x = static_cast<double>(i + 1) / base;
+        double hlg2l = imageops::HLGtoLinear(x);
+        double l2hlg = imageops::LineartoHLG(hlg2l);
+        INFO("Base " << x << "| HLG2L " << hlg2l << " | L2HLG " << l2hlg);
+        REQUIRE_THAT(l2hlg, Catch::Matchers::WithinRel(x, 1e-6));
+        l2hlg = imageops::LineartoHLG(x);
+        hlg2l = imageops::HLGtoLinear(l2hlg);
+        INFO("Base " << x << "| L2HLG " << l2hlg << "| HLG2L " << hlg2l);
+        REQUIRE_THAT(hlg2l, Catch::Matchers::WithinRel(x, 1e-6));
+    }
+}
 
 TEST_CASE("PNG", "[imageops]") {
     utils::Error error;
