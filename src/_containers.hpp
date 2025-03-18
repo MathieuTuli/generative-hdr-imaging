@@ -1,12 +1,26 @@
 #ifndef IMAGE_PROCESSOR_HPP
 #define IMAGE_PROCESSOR_HPP
 
-#include <array>
-#include <array>
+/*
+// #include <array>
 #include <cmath>
+#include <cstdint>
 #include <cstring>
+#include <vector>
 
 #define BOUND(x, min, max) ((x) < (min)) ? (min) : ((x) > (max)) ? (max) : (x)
+
+// Raw image data structure to hold unprocessed bytes
+struct RawImageData {
+    size_t width{0};
+    size_t height{0};
+    size_t channels{0};
+    size_t bits_per_channel{0};
+    bool is_float{false}; // true for float formats like EXR
+    bool is_big_endian{false};
+    std::vector<uint8_t> data; // Raw bytes
+};
+
 
 struct Color {
     union {
@@ -172,7 +186,8 @@ static inline float clampPixelFloatLinear(float value) {
 }
 
 static inline Color clampPixelFloatLinear(Color e) {
-  return {{{clampPixelFloatLinear(e.r), clampPixelFloatLinear(e.g), clampPixelFloatLinear(e.b)}}};
+  return {{{clampPixelFloatLinear(e.r), clampPixelFloatLinear(e.g),
+clampPixelFloatLinear(e.b)}}};
 }
 
 static float mapNonFiniteFloats(float val) {
@@ -184,12 +199,12 @@ static float mapNonFiniteFloats(float val) {
 }
 
 static inline Color sanitizePixel(Color e) {
-  float r = std::isfinite(e.r) ? clampPixelFloatLinear(e.r) : mapNonFiniteFloats(e.r);
-  float g = std::isfinite(e.g) ? clampPixelFloatLinear(e.g) : mapNonFiniteFloats(e.g);
-  float b = std::isfinite(e.b) ? clampPixelFloatLinear(e.b) : mapNonFiniteFloats(e.b);
+  float r = std::isfinite(e.r) ? clampPixelFloatLinear(e.r) :
+mapNonFiniteFloats(e.r); float g = std::isfinite(e.g) ?
+clampPixelFloatLinear(e.g) : mapNonFiniteFloats(e.g); float b =
+std::isfinite(e.b) ? clampPixelFloatLinear(e.b) : mapNonFiniteFloats(e.b);
   return {{{r, g, b}}};
 }
-
-#endif
+*/
 
 #endif
