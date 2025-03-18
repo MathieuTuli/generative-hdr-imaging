@@ -1,4 +1,3 @@
-#include "imageio.hpp"
 #include "imageops.hpp"
 #include <iostream>
 #include <string>
@@ -114,6 +113,7 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
+    /*
     utils::Error error;
     imageio::HDRImage input_image;
     imageio::HDRImage output_image;
@@ -175,5 +175,6 @@ int main(int argc, char *argv[]) {
     }
 
     std::cout << "Conversion completed successfully!" << std::endl;
+    */
     return 0;
 }

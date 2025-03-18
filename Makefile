@@ -23,7 +23,8 @@ INC_FLAGS := $(addprefix -I,$(INC_DIRS))
 # The -MMD and -MP flags together generate Makefiles for us!
 # These files will have .d instead of .o as the output.
 CPPFLAGS := $(INC_FLAGS) -MMD -MP
-CXXFLAGS = -std=c++17 -g -Wall -Wformat
+# CXXFLAGS = -std=c++17 -g -Wall -Wformat
+CXXFLAGS = -std=c++17 -gdwarf-4 -Wall -Wformat
 LIBS :=
 
 # -- system based args
@@ -63,13 +64,24 @@ ifeq ($(UNAME_S), Linux) #LINUX
 endif
 
 ifeq ($(UNAME_S), Darwin) #APPLE
+	# imgui
+	CXXFLAGS += -fno-omit-frame-pointer
+
 	LIBS += -framework OpenGL -framework Cocoa -framework IOKit -framework CoreVideo
 	LIBS += -lglfw
-	LIBS += $(shell pkg-config --libs opencv4)
 	LIBS += -L /opt/homebrew/opt/ffmpeg/lib -lavformat -lpostproc -lavcodec -lswscale -lavfilter -lavutil -lswresample -lavdevice
 	LIBS += -framework AppKit -framework UniformTypeIdentifiers
 	# LIBS += -lglfw3
+	LIBS += $(shell pkg-config --libs opencv4)
 	CXXFLAGS += $(shell pkg-config --cflags opencv4)
+
+	# catch2
+	LIBS += $(shell pkg-config --libs catch2-with-main)
+	CXXFLAGS += $(shell pkg-config --cflags catch2-with-main)
+
+	# catch2
+	LIBS += $(shell pkg-config --libs libpng)
+	CXXFLAGS += $(shell pkg-config --cflags libpng)
 endif
 
 IMGUI_DIR := $(DEPS_DIR)/imgui
