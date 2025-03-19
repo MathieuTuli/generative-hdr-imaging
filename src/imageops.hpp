@@ -13,6 +13,7 @@ namespace imageops {
 // DATA CONTAINERS
 // ----------------------------------------
 enum class ToneMapping {
+    BASE,
     REINHARD,
     GAMMA,
     FILMIC,
@@ -101,19 +102,27 @@ bool WritetoPNG(const std::unique_ptr<PNGImage> &image,
 // ----------------------------------------
 // CONVERSION
 // ----------------------------------------
-// HLG -> LINEAR -> CLIP/COMPRESSION/HDR-SDR TONEMAP -> COLOR SPACE -> SRGB TONEMAP -> QUANT
+// 1. HLG ->
+// 2. LINEAR ->
+// 3. CLIP/COMPRESSION/HDR-SDR TONEMAP ->
+// 4. COLOR SPACE ->
+// 5. sRGB TONEMAP/TRANSFER ->
+// 6. QUANT
 double LineartoHLG(double x);
 double HLGtoLinear(double x);
 #define CLIP(x, min, max) ((x) < (min)) ? (min) : ((x) > (max)) ? (max) : (x)
-double DynamicRangeCompression(double x);
+double ApplyToneMapping(double x, ToneMapping mode, double target_nits,
+                        double max_nits);
 
-void Rec2020toSRGB(double &r, double &g, double &b);
+void LinearRec2020toLinearsRGB(double &r, double &g, double &b);
 
-double SRGBTransfer(double x);
+double LineartosRGB(double x);
+double sRGBtoLinear(double x);
 
 std::unique_ptr<PNGImage> HDRtoSDR(const std::unique_ptr<PNGImage> &hdr_image,
-                                   const SDRConversionParams &params,
-                                   utils::Error &error);
+                                   double clip_low, double clip_high,
+                                   utils::Error &error,
+                                   ToneMapping mode);
 
 
 } // namespace imageops

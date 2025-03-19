@@ -8,14 +8,20 @@ TEST_CASE("Helpers", "[imageops]") {
     double x;
     for (int i = 0; i < 10; i++){
         x = static_cast<double>(i + 1) / base;
+
         double hlg2l = imageops::HLGtoLinear(x);
         double l2hlg = imageops::LineartoHLG(hlg2l);
-        INFO("Base " << x << "| HLG2L " << hlg2l << " | L2HLG " << l2hlg);
         REQUIRE_THAT(l2hlg, Catch::Matchers::WithinRel(x, 1e-6));
         l2hlg = imageops::LineartoHLG(x);
         hlg2l = imageops::HLGtoLinear(l2hlg);
-        INFO("Base " << x << "| L2HLG " << l2hlg << "| HLG2L " << hlg2l);
         REQUIRE_THAT(hlg2l, Catch::Matchers::WithinRel(x, 1e-6));
+
+        double srgb2l = imageops::sRGBtoLinear(x);
+        double l2srgb = imageops::LineartosRGB(srgb2l);
+        REQUIRE_THAT(l2srgb, Catch::Matchers::WithinRel(x, 1e-6));
+        l2srgb = imageops::LineartosRGB(x);
+        srgb2l = imageops::sRGBtoLinear(l2srgb);
+        REQUIRE_THAT(srgb2l, Catch::Matchers::WithinRel(x, 1e-6));
     }
 
     SECTION("Invalid inputs") {
@@ -27,6 +33,15 @@ TEST_CASE("Helpers", "[imageops]") {
 
         REQUIRE_THROWS_AS(imageops::HLGtoLinear(std::numeric_limits<double>::infinity()), std::runtime_error);
         REQUIRE_THROWS_AS(imageops::LineartoHLG(std::numeric_limits<double>::infinity()), std::runtime_error);
+
+        REQUIRE_THROWS_AS(imageops::sRGBtoLinear(-1.0), std::runtime_error);
+        REQUIRE_THROWS_AS(imageops::LineartosRGB(-1.0), std::runtime_error);
+
+        REQUIRE_THROWS_AS(imageops::sRGBtoLinear(std::numeric_limits<double>::quiet_NaN()), std::runtime_error);
+        REQUIRE_THROWS_AS(imageops::LineartosRGB(std::numeric_limits<double>::quiet_NaN()), std::runtime_error);
+
+        REQUIRE_THROWS_AS(imageops::sRGBtoLinear(std::numeric_limits<double>::infinity()), std::runtime_error);
+        REQUIRE_THROWS_AS(imageops::LineartosRGB(std::numeric_limits<double>::infinity()), std::runtime_error);
     }
 }
 
@@ -39,6 +54,7 @@ TEST_CASE("PNG", "[imageops]") {
         INFO(error.message);
     }
     std::vector<std::pair<imageops::ToneMapping, std::string>> tone_mappers = {
+        {imageops::ToneMapping::BASE, "base"},
         {imageops::ToneMapping::REINHARD, "reinhard"},
         {imageops::ToneMapping::GAMMA, "gamma"},
         {imageops::ToneMapping::FILMIC, "filmic"},
@@ -49,11 +65,8 @@ TEST_CASE("PNG", "[imageops]") {
         {imageops::ToneMapping::HABLE, "hable"}};
 
     for (const auto &[tone_mapper, name] : tone_mappers) {
-        imageops::SDRConversionParams sdr_params{.tone_mapping = tone_mapper};
-        imageops::ImageMetadata metadata = imageops::ReadHDRPNGMetadata("./images/test_hdr_png.png", error);
-        // imageops::UpdateSDRParams(sdr_params, metadata);
         std::unique_ptr<imageops::PNGImage> sdr_image =
-            imageops::HDRtoSDR(image, sdr_params, error);
+            imageops::HDRtoSDR(image, 0.0, 1.0, error, tone_mapper);
         REQUIRE_FALSE(error.raise);
 
         std::string output_path = "./images/test_hdr_png_" + name + ".png";

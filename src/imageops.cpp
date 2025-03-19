@@ -4,10 +4,10 @@
 #include <cassert>
 #include <cmath>
 #include <filesystem>
+#include <functional>
 #include <iostream>
 #include <memory>
 #include <png.h>
-#include <vector>
 
 namespace imageops {
 
@@ -313,6 +313,7 @@ bool WritetoPNG(const std::unique_ptr<PNGImage> &image,
 // CONVERSION
 // ----------------------------------------
 double LineartoHLG(double x) {
+    /* Follows ITU-R BT.2100-2 */
     const double a = 0.17883277;
     const double b = 1.0 - 4.0 * a;               // 0.28466892;
     const double c = 0.5 - a * std::log(4.0 * a); // 0.55991073;
@@ -331,6 +332,7 @@ double LineartoHLG(double x) {
 }
 
 double HLGtoLinear(double x) {
+    /* Follows ITU-R BT.2100-2 */
     const double a = 0.17883277;
     const double b = 1.0 - 4.0 * a;               // 0.28466892;
     const double c = 0.5 - a * std::log(4.0 * a); // 0.55991073;
@@ -347,74 +349,158 @@ double HLGtoLinear(double x) {
         return (std::exp((x - c) / a) + b) / 12.0;
     }
 }
-double DynamicRangeCompression(double x) {
-    // REVISIT:
-    x = CLIP(x, 0, 1.0);
-    double target_nits = 100.0;
-    double max_nits = 100.0;
+double ApplyToneMapping(double x, ToneMapping mode, double target_nits = 100.0,
+                        double max_nits = 100.0) {
+    if (mode == ToneMapping::BASE) {
+        x *= target_nits / max_nits;
+    } else if (mode == ToneMapping::REINHARD) {
+        x = x / (1.0 + x);
+    } else if (mode == ToneMapping::GAMMA) {
+        // REVISIT: 2.2
+        x = std::pow(x, 1.0 / 2.2);
+    } else if (mode == ToneMapping::FILMIC) {
+        const double A = 2.51;
+        const double B = 0.03;
+        const double C = 2.43;
+        const double D = 0.59;
+        const double E = 0.14;
+        x = (x * (A * x + B)) / (x * (C * x + D) + E);
+    } else if (mode == ToneMapping::ACES) {
+        const double a = 2.51;
+        const double b = 0.03;
+        const double c = 2.43;
+        const double d = 0.59;
+        const double e = 0.14;
+        // REVISIT: Exposure adjustment for ACES
+        double adjusted = x * 0.6;
+        x = (adjusted * (adjusted + b) * a) /
+            (adjusted * (adjusted * c + d) + e);
+    } else if (mode == ToneMapping::UNCHARTED2) {
+        const double A = 0.15;
+        const double B = 0.50;
+        const double C = 0.10;
+        const double D = 0.20;
+        const double E = 0.02;
+        const double F = 0.30;
+        const double W = 11.2;
 
+        auto uncharted2_tonemap = [=](double x) -> double {
+            return ((x * (A * x + C * B) + D * E) / (x * (A * x + B) + D * F)) -
+                   E / F;
+        };
 
-    x *= target_nits / max_nits;
+        x = uncharted2_tonemap(x) / uncharted2_tonemap(W);
+    } else if (mode == ToneMapping::DRAGO) {
+        const double bias = 0.85;
+        const double Lwa = 1.0;
 
-    // REVISIT: Improved tone mapping
-    // REINHARD, ACES, or HABLE
-    // x = x / (x + 1.0);
+        x = std::log(1 + x) / std::log(1 + Lwa);
+        x = std::pow(x, bias);
+    } else if (mode == ToneMapping::LOTTES) {
+        const double a = 1.6;
+
+        const double mid_in = 0.18;
+        const double mid_out = 0.267;
+
+        const double t = x * a;
+        x = t / (t + 1);
+
+        const double z = (mid_in * a) / (mid_in * a + 1);
+        x = x * (mid_out / z);
+    } else if (mode == ToneMapping::HABLE) {
+        const double A = 0.22; // Shoulder strength
+        const double B = 0.30; // Linear strength
+        const double C = 0.10; // Linear angle
+        const double D = 0.20; // Toe strength
+        const double E = 0.01; // Toe numerator
+        const double F = 0.30; // Toe denominator
+        const double W = 11.2;
+
+        std::function<double(double)> hable = [=](double x) -> double {
+            return (x * (A * x + C * B) + D * E) / (x * (A * x + B) + D * F) -
+                   E / F;
+        };
+
+        x = hable(x) / hable(W);
+    } else if (mode == ToneMapping::REINHARD) {
+        x = x / (1.0 + x);
+    }
     return x;
 }
 
+void LinearRec2020toLinearsRGB(double &r, double &g, double &b) {
+    // using D65 white point
+    // standard RGB primaries and white point
+    // const double matrix[3][3] = {{1.6605, -0.5876, -0.0728},
+    //                              {-0.1246, 1.1329, -0.0083},
+    //                              {-0.0182, -0.1006, 1.1187}};
+    const double rec2020_to_xyz[3][3] = {{0.6370, 0.1446, 0.1689},
+                                         {0.2627, 0.6780, 0.0593},
+                                         {0.0000, 0.0281, 1.0610}};
 
-// Helper function for Rec.2020 to sRGB color space conversion
-void Rec2020toSRGB(double &r, double &g, double &b) {
-    // Rec.2020 to sRGB conversion matrix (D65 white point)
-    // These values are derived from the standard RGB primaries and white point
-    const double matrix[3][3] = {{1.6605, -0.5876, -0.0728},
-                                 {-0.1246, 1.1329, -0.0083},
-                                 {-0.0182, -0.1006, 1.1187}};
+    double x = rec2020_to_xyz[0][0] * r + rec2020_to_xyz[0][1] * g +
+               rec2020_to_xyz[0][2] * b;
+    double y = rec2020_to_xyz[1][0] * r + rec2020_to_xyz[1][1] * g +
+               rec2020_to_xyz[1][2] * b;
+    double z = rec2020_to_xyz[2][0] * r + rec2020_to_xyz[2][1] * g +
+               rec2020_to_xyz[2][2] * b;
 
-    // Apply color space conversion
-    double new_r = matrix[0][0] * r + matrix[0][1] * g + matrix[0][2] * b;
-    double new_g = matrix[1][0] * r + matrix[1][1] * g + matrix[1][2] * b;
-    double new_b = matrix[2][0] * r + matrix[2][1] * g + matrix[2][2] * b;
+    const double xyz_to_sRGB[3][3] = {{3.2404542, -1.5371385, -0.4985314},
+                                      {-0.9692660, 1.8760108, 0.0415560},
+                                      {0.0556434, -0.2040259, 1.0572252}};
 
-    // Clamp values to [0,1] range after conversion
-    r = std::max(0.0, std::min(1.0, new_r));
-    g = std::max(0.0, std::min(1.0, new_g));
-    b = std::max(0.0, std::min(1.0, new_b));
+    double new_r =
+        xyz_to_sRGB[0][0] * x + xyz_to_sRGB[0][1] * y + xyz_to_sRGB[0][2] * z;
+    double new_g =
+        xyz_to_sRGB[1][0] * x + xyz_to_sRGB[1][1] * y + xyz_to_sRGB[1][2] * z;
+    double new_b =
+        xyz_to_sRGB[2][0] * x + xyz_to_sRGB[2][1] * y + xyz_to_sRGB[2][2] * z;
+
+    r = CLIP(new_r, 0.0, 1.0);
+    g = CLIP(new_g, 0.0, 1.0);
+    b = CLIP(new_b, 0.0, 1.0);
 }
 
-double SRGBTransfer(double x) {
-    if (x <= 0.0031308f) {
+double LineartosRGB(double x) {
+    const double epsilon =
+        1e-6; // Define a small epsilon for floating point comparison
+    ASSERT(-epsilon <= x && x <= (1.0 + epsilon),
+           "Input should be in range [0, 1], from %f", x);
+    if (x <= 0.0031308) {
         return 12.92 * x;
     } else {
-        return 1.055 * std::pow(x, 1.0 / 2.4f) - 0.055f;
+        return 1.055 * std::pow(x, 1.0 / 2.4) - 0.055;
+    }
+}
+
+double sRGBtoLinear(double x) {
+    const double epsilon =
+        1e-6; // Define a small epsilon for floating point comparison
+    ASSERT(-epsilon <= x && x <= (1.0 + epsilon),
+           "Input should be in range [0, 1], from %f", x);
+    if (x <= 0.04045) {
+        return x / 12.92;
+    } else {
+        return std::pow((x + 0.055) / 1.055, 2.4);
     }
 }
 
 std::unique_ptr<PNGImage> HDRtoSDR(const std::unique_ptr<PNGImage> &hdr_image,
-                                   const SDRConversionParams &params,
-                                   utils::Error &error) {
+                                   double clip_low, double clip_high,
+                                   utils::Error &error,
+                                   ToneMapping mode = ToneMapping::BASE) {
     if (!hdr_image || !hdr_image->row_pointers) {
         error = {true, "Invalid input HDR image"};
         return nullptr;
     }
 
-    // Validate input parameters for HLG P3 conversion
-    const double target_nits =
-        params.target_nits > 0 ? params.target_nits : 100.0;
-    const double max_nits = params.max_nits > 0 ? params.max_nits : 100.0;
-    const double luminance_scale = target_nits / max_nits;
-
-    // Create output image with same dimensions but 8-bit depth
     auto sdr_image = std::make_unique<PNGImage>();
     sdr_image->width = hdr_image->width;
     sdr_image->height = hdr_image->height;
     sdr_image->color_type = PNG_COLOR_TYPE_RGB;
-    sdr_image->bit_depth = 8; // Output will be 8-bit
-    sdr_image->bytes_per_row =
-        hdr_image->width *
-        3; // (hdr_image->color_type == PNG_COLOR_TYPE_RGBA ? 4 : 3);
+    sdr_image->bit_depth = 8;
+    sdr_image->bytes_per_row = hdr_image->width * 3;
 
-    // Allocate memory for output image
     sdr_image->row_pointers =
         (png_bytep *)malloc(sizeof(png_bytep) * sdr_image->height);
     for (size_t y = 0; y < sdr_image->height; y++) {
@@ -422,17 +508,9 @@ std::unique_ptr<PNGImage> HDRtoSDR(const std::unique_ptr<PNGImage> &hdr_image,
             (png_byte *)malloc(sdr_image->bytes_per_row);
     }
 
-    // Process each pixel
-    const double gamma = params.gamma > 0 ? params.gamma : 2.2; // Default gamma
-    const double exposure =
-        params.exposure > 0 ? params.exposure : 1.0; // Default exposure
-    const size_t channels =
-        (hdr_image->color_type == PNG_COLOR_TYPE_RGBA) ? 4 : 3;
+    const size_t channels = 3;
 
-    // Pre-calculate exposure adjustment
-    const double exposure_scale = std::pow(2.0, exposure);
-
-    // Find max value for auto-clipping if needed
+    /*
     double max_value = 0.0;
     if (params.auto_clip) {
         std::vector<double> all_values;
@@ -457,215 +535,48 @@ std::unique_ptr<PNGImage> HDRtoSDR(const std::unique_ptr<PNGImage> &hdr_image,
     } else {
         max_value = params.clip_high > 0 ? params.clip_high : 1.0;
     }
+    */
 
-    // Process each pixel
     for (size_t y = 0; y < hdr_image->height; y++) {
-        png_bytep in_row = hdr_image->row_pointers[y];
-        png_bytep out_row = sdr_image->row_pointers[y];
+        png_bytep hdr_row = hdr_image->row_pointers[y];
+        png_bytep sdr_row = sdr_image->row_pointers[y];
 
         for (size_t x = 0; x < hdr_image->width; x++) {
-            for (size_t c = 0; c < channels; c++) {
-                size_t in_idx =
-                    x * channels * 2 + c * 2; // *2 because input is 16-bit
-                size_t out_idx = x * channels + c;
+            size_t sdr_idx = x * channels;
 
-                // Read 16-bit values for all channels first
-                uint16_t values[3];
-                for (size_t i = 0; i < 3; i++) {
-                    size_t idx = x * channels * 2 + i * 2;
-                    // Note: PNG stores in network byte order (big-endian)
-                    values[i] = (in_row[idx] << 8) | in_row[idx + 1];
-                }
-
-                // Convert to normalized [0,1] range
-                double r = (values[0] / 65535.0);
-                double g = (values[1] / 65535.0);
-                double b = (values[2] / 65535.0);
-
-                // Apply exposure before HLG EOTF
-                r *= exposure_scale;
-                g *= exposure_scale;
-                b *= exposure_scale;
-
-                // Clamp values to valid HLG input range [0,1]
-                r = std::min(1.0, std::max(0.0, r));
-                g = std::min(1.0, std::max(0.0, g));
-                b = std::min(1.0, std::max(0.0, b));
-
-                // Apply HLG EOTF to get linear values with more conservative
-                // scaling
-                r = HLGtoLinear(r) *
-                    0.8; // Reduce intensity by 20% to prevent highlight blowout
-                g = HLGtoLinear(g) * 0.8;
-                b = HLGtoLinear(b) * 0.8;
-
-                // More conservative display scaling
-                const double display_scale = std::min(1.0, max_nits / 1000.0);
-                r *= display_scale;
-                g *= display_scale;
-                b *= display_scale;
-
-                // Convert from Rec.2020 to sRGB color space with highlight
-                // protection
-                double max_rgb_pre = std::max({r, g, b});
-                Rec2020toSRGB(r, g, b);
-                double max_rgb_post = std::max({r, g, b});
-
-                // Preserve relative highlight ratios
-                if (max_rgb_post > max_rgb_pre && max_rgb_pre > 0) {
-                    double scale = max_rgb_pre / max_rgb_post;
-                    r *= scale;
-                    g *= scale;
-                    b *= scale;
-                }
-
-                // Apply luminance scaling with highlight preservation
-                if (params.preserve_highlights && max_nits > target_nits) {
-                    double max_rgb = std::max({r, g, b});
-                    if (max_rgb > params.knee_point) {
-                        // Smooth roll-off for highlights
-                        double ratio = (max_rgb - params.knee_point) /
-                                       (1.0 - params.knee_point);
-                        double scale =
-                            params.knee_point +
-                            (1.0 - params.knee_point) *
-                                (1.0 -
-                                 std::exp(-ratio *
-                                          4.0)); // Adjustable roll-off speed
-                        r *= scale / max_rgb;
-                        g *= scale / max_rgb;
-                        b *= scale / max_rgb;
-                    }
-                }
-
-                // Scale to target display luminance
-                r *= target_nits / max_nits;
-                g *= target_nits / max_nits;
-                b *= target_nits / max_nits;
-
-                // Select current channel value for further processing
-                double linearized = (c == 0) ? r : (c == 1) ? g : b;
-
-                // 3. Clip dynamic range
-                double clipped =
-                    std::min(std::max(linearized, params.clip_low), max_value);
-                if (max_value != 1.0) {
-                    clipped = (clipped - params.clip_low) /
-                              (max_value - params.clip_low);
-                }
-
-                // 4. Apply tone mapping
-                double tone_mapped;
-                switch (params.tone_mapping) {
-                case ToneMapping::REINHARD: {
-                    // Simple Reinhard operator
-                    tone_mapped = clipped / (1.0 + clipped);
-                    break;
-                }
-                case ToneMapping::GAMMA: {
-                    // Simple gamma correction
-                    tone_mapped = std::pow(clipped, 1.0 / gamma);
-                    break;
-                }
-                case ToneMapping::FILMIC: {
-                    // John Hable's filmic curve parameters
-                    const double A = 2.51;
-                    const double B = 0.03;
-                    const double C = 2.43;
-                    const double D = 0.59;
-                    const double E = 0.14;
-                    tone_mapped = (clipped * (A * clipped + B)) /
-                                  (clipped * (C * clipped + D) + E);
-                    break;
-                }
-                case ToneMapping::ACES: {
-                    // ACES approximation (Krzysztof Narkowicz)
-                    const double a = 2.51;
-                    const double b = 0.03;
-                    const double c = 2.43;
-                    const double d = 0.59;
-                    const double e = 0.14;
-                    double adjusted =
-                        clipped * 0.6; // Exposure adjustment for ACES
-                    tone_mapped = (adjusted * (adjusted + b) * a) /
-                                  (adjusted * (adjusted * c + d) + e);
-                    break;
-                }
-                case ToneMapping::UNCHARTED2: {
-                    // Uncharted 2 tone mapping (John Hable)
-                    const double A = 0.15;
-                    const double B = 0.50;
-                    const double C = 0.10;
-                    const double D = 0.20;
-                    const double E = 0.02;
-                    const double F = 0.30;
-                    const double W = 11.2;
-
-                    auto uncharted2_tonemap = [=](double x) -> double {
-                        return ((x * (A * x + C * B) + D * E) /
-                                (x * (A * x + B) + D * F)) -
-                               E / F;
-                    };
-
-                    tone_mapped =
-                        uncharted2_tonemap(clipped) / uncharted2_tonemap(W);
-                    break;
-                }
-                case ToneMapping::DRAGO: {
-                    // Drago logarithmic mapping
-                    const double bias = 0.85;
-                    const double Lwa = 1.0; // World adaptation luminance
-
-                    tone_mapped = std::log(1 + clipped) / std::log(1 + Lwa);
-                    tone_mapped = std::pow(tone_mapped, bias);
-                    break;
-                }
-                case ToneMapping::LOTTES: {
-                    // Timothy Lottes' optimized tone mapping
-                    const double a = 1.6;
-
-                    const double midIn = 0.18;
-                    const double midOut = 0.267;
-
-                    // Lottes curve
-                    const double t = clipped * a;
-                    tone_mapped = t / (t + 1);
-
-                    // Scale to preserve mids
-                    const double z = (midIn * a) / (midIn * a + 1);
-                    tone_mapped = tone_mapped * (midOut / z);
-                    break;
-                }
-                case ToneMapping::HABLE: {
-                    // John Hable's filmic tone mapping (Unreal 3/4)
-                    const double A = 0.22; // Shoulder strength
-                    const double B = 0.30; // Linear strength
-                    const double C = 0.10; // Linear angle
-                    const double D = 0.20; // Toe strength
-                    const double E = 0.01; // Toe numerator
-                    const double F = 0.30; // Toe denominator
-                    const double W = 11.2;
-
-                    auto hable = [=](double x) -> double {
-                        return (x * (A * x + C * B) + D * E) /
-                                   (x * (A * x + B) + D * F) -
-                               E / F;
-                    };
-
-                    tone_mapped = hable(clipped) / hable(W);
-                    break;
-                }
-                default: {
-                    // Default to Reinhard if unknown tone mapping specified
-                    tone_mapped = clipped / (1.0 + clipped);
-                    break;
-                }
-                }
-
-                // 5. Quantize to 8-bit
-                out_row[out_idx] = static_cast<uint8_t>(
-                    std::min(std::max(tone_mapped * 255.0, 0.0), 255.0));
+            uint16_t values[3];
+            for (size_t i = 0; i < 3; i++) {
+                // *2 because input is 16-bit
+                size_t idx = x * channels * 2 + i * 2;
+                // PNG stores in network byte order (big-endian)
+                values[i] = (hdr_row[idx] << 8) | hdr_row[idx + 1];
             }
+
+            double r = (values[0] / 65535.0);
+            double g = (values[1] / 65535.0);
+            double b = (values[2] / 65535.0);
+
+            r = HLGtoLinear(r);
+            g = HLGtoLinear(g);
+            b = HLGtoLinear(b);
+            // REVISIT: what to clip to?
+            r = CLIP(r, 0.0, 1.0);
+            g = CLIP(r, 0.0, 1.0);
+            b = CLIP(r, 0.0, 1.0);
+            r = ApplyToneMapping(r, ToneMapping::REINHARD);
+            g = ApplyToneMapping(g, ToneMapping::REINHARD);
+            b = ApplyToneMapping(b, ToneMapping::REINHARD);
+            LinearRec2020toLinearsRGB(r, g, b);
+            r = LineartosRGB(r);
+            g = LineartosRGB(g);
+            b = LineartosRGB(b);
+
+            sdr_row[sdr_idx + 0] =
+                static_cast<uint8_t>(CLIP(r * 255.0, 0.0, 255.0));
+            sdr_row[sdr_idx + 1] =
+                static_cast<uint8_t>(CLIP(g * 255.0, 0.0, 255.0));
+            sdr_row[sdr_idx + 2] =
+                static_cast<uint8_t>(CLIP(b * 255.0, 0.0, 255.0));
         }
     }
 
