@@ -38,13 +38,35 @@ HDRFormat DetectFormat(const std::string &filename) {
     if (HasExtension(filename, ".avif"))
         return HDRFormat::AVIF;
     if (HasExtension(filename, ".hdr"))
-        return imageops::HDRFormat::PNG_HDR;
+        return imageops::HDRFormat::HDRPNG;
     return HDRFormat::UNKNOWN;
 }
 
 // ----------------------------------------
 // INVOLVED IO
 // ----------------------------------------
+std::unique_ptr<PNGImage> LoadImage(const std::string &filename,
+                                    utils::Error &error) {
+    // First validate the file exists and is readable
+    if (!ValidateHeader(filename, error)) {
+        return nullptr;
+    }
+
+    // Detect format based on file extension
+    HDRFormat format = DetectFormat(filename);
+
+    switch (format) {
+    case HDRFormat::HDRPNG:
+        return LoadHDRPNG(filename, error);
+    case HDRFormat::AVIF:
+        // LoadAVIF(filename, error); // Currently returns error
+        error = {true, "Avif not supported yet"};
+        return nullptr;
+    default:
+        error = {true, "Unsupported image format for file: " + filename};
+        return nullptr;
+    }
+}
 
 void LoadAVIF(const std::string &filename, utils::Error &error) {
     // TODO: Implement AVIF loading using libavif
@@ -120,7 +142,7 @@ ImageMetadata ReadMetadata(const std::string &filename, HDRFormat format,
     switch (format) {
     case HDRFormat::AVIF:
         return ReadAVIFMetadata(filename, error);
-    case HDRFormat::PNG_HDR:
+    case HDRFormat::HDRPNG:
         return ReadHDRPNGMetadata(filename, error);
     default:
         error = {true, "Unsupported format for metadata"};
@@ -349,6 +371,42 @@ double HLGtoLinear(double x) {
         return (std::exp((x - c) / a) + b) / 12.0;
     }
 }
+
+
+double LineartosRGB(double x) {
+    const double epsilon =
+        1e-6; // Define a small epsilon for floating point comparison
+    ASSERT(-epsilon <= x && x <= (1.0 + epsilon),
+           "Input should be in range [0, 1], from %f", x);
+    if (x <= 0.0031308) {
+        return 12.92 * x;
+    } else {
+        return 1.055 * std::pow(x, 1.0 / 2.4) - 0.055;
+    }
+}
+
+double sRGBtoLinear(double x) {
+    const double epsilon =
+        1e-6; // Define a small epsilon for floating point comparison
+    ASSERT(-epsilon <= x && x <= (1.0 + epsilon),
+           "Input should be in range [0, 1], from %f", x);
+    if (x <= 0.04045) {
+        return x / 12.92;
+    } else {
+        return std::pow((x + 0.055) / 1.055, 2.4);
+    }
+}
+
+double LinearsHLGtoYUV(double x){
+    return 0.0;
+}
+
+double LinearsRGBtoYUV(double &r, double &g, double &b){
+  // float y_gamma = srgbLuminance(e_gamma);
+  // return {{{y_gamma, (e_gamma.b - y_gamma) / kSrgbCb, (e_gamma.r - y_gamma) / kSrgbCr}}};
+  return 0.0;
+}
+
 double ApplyToneMapping(double x, ToneMapping mode, double target_nits = 100.0,
                         double max_nits = 100.0) {
     if (mode == ToneMapping::BASE) {
@@ -461,28 +519,65 @@ void LinearRec2020toLinearsRGB(double &r, double &g, double &b) {
     b = CLIP(new_b, 0.0, 1.0);
 }
 
-double LineartosRGB(double x) {
-    const double epsilon =
-        1e-6; // Define a small epsilon for floating point comparison
-    ASSERT(-epsilon <= x && x <= (1.0 + epsilon),
-           "Input should be in range [0, 1], from %f", x);
-    if (x <= 0.0031308) {
-        return 12.92 * x;
-    } else {
-        return 1.055 * std::pow(x, 1.0 / 2.4) - 0.055;
+std::unique_ptr<PNGImage>
+HDRtoRAW(const std::unique_ptr<PNGImage> &hdr_image, double clip_low,
+         double clip_high, utils::Error &error,
+         ToneMapping tone_mapping = ToneMapping::BASE) {
+    if (!hdr_image || !hdr_image->row_pointers) {
+        error = {true, "Invalid input HDR image"};
+        return nullptr;
     }
-}
 
-double sRGBtoLinear(double x) {
-    const double epsilon =
-        1e-6; // Define a small epsilon for floating point comparison
-    ASSERT(-epsilon <= x && x <= (1.0 + epsilon),
-           "Input should be in range [0, 1], from %f", x);
-    if (x <= 0.04045) {
-        return x / 12.92;
-    } else {
-        return std::pow((x + 0.055) / 1.055, 2.4);
+    auto raw_image = std::make_unique<PNGImage>();
+    raw_image->width = hdr_image->width;
+    raw_image->height = hdr_image->height;
+    raw_image->color_type = PNG_COLOR_TYPE_RGB;
+    raw_image->bit_depth = hdr_image->bit_depth;
+    // REVISIT: is this right?
+    raw_image->bytes_per_row = hdr_image->bytes_per_row;
+
+    raw_image->row_pointers =
+        (png_bytep *)malloc(sizeof(png_bytep) * raw_image->height);
+    for (size_t y = 0; y < raw_image->height; y++) {
+        raw_image->row_pointers[y] =
+            (png_byte *)malloc(raw_image->bytes_per_row);
     }
+
+    const size_t channels = 3;
+    for (size_t y = 0; y < hdr_image->height; y++) {
+        png_bytep hdr_row = hdr_image->row_pointers[y];
+        png_bytep raw_row = raw_image->row_pointers[y];
+
+        for (size_t x = 0; x < hdr_image->width; x++) {
+            size_t raw_idx = x * channels;
+
+            uint16_t values[3];
+            for (size_t i = 0; i < 3; i++) {
+                // *2 because input is 16-bit
+                size_t idx = x * channels * 2 + i * 2;
+                // PNG stores in network byte order (big-endian)
+                values[i] = (hdr_row[idx] << 8) | hdr_row[idx + 1];
+            }
+
+            double r = (values[0] / 65535.0);
+            double g = (values[1] / 65535.0);
+            double b = (values[2] / 65535.0);
+
+            r = HLGtoLinear(r);
+            g = HLGtoLinear(g);
+            b = HLGtoLinear(b);
+            // REVISIT: what to clip to?
+            r = CLIP(r, 0.0, 1.0);
+            g = CLIP(g, 0.0, 1.0);
+            b = CLIP(b, 0.0, 1.0);
+
+            raw_row[raw_idx + 0] = r;
+            raw_row[raw_idx + 1] = g;
+            raw_row[raw_idx + 2] = b;
+        }
+    }
+
+    return raw_image;
 }
 
 std::unique_ptr<PNGImage>

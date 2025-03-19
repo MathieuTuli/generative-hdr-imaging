@@ -52,7 +52,7 @@ struct ImageMetadata {
 
 enum class HDRFormat {
     UNKNOWN = -1,
-    PNG_HDR = 0,
+    HDRPNG = 0,
     AVIF = 1,
 };
 
@@ -77,7 +77,6 @@ struct SDRConversionParams {
     ToneMapping tone_mapping{ToneMapping::GAMMA};
 };
 
-
 // ----------------------------------------
 // BASIC IO
 // ----------------------------------------
@@ -88,6 +87,8 @@ HDRFormat DetectFormat(const std::string &filename);
 // ----------------------------------------
 // INVOLVED IO
 // ----------------------------------------
+std::unique_ptr<PNGImage> LoadImage(const std::string &filename,
+                                    utils::Error &error);
 void LoadAVIF(const std::string &filename, utils::Error &error);
 std::unique_ptr<PNGImage> LoadHDRPNG(const std::string &filename,
                                      utils::Error &error);
@@ -108,22 +109,24 @@ bool WritetoPNG(const std::unique_ptr<PNGImage> &image,
 // 4. COLOR SPACE ->
 // 5. sRGB TONEMAP/TRANSFER ->
 // 6. QUANT
+#define CLIP(x, min, max) ((x) < (min)) ? (min) : ((x) > (max)) ? (max) : (x)
 double LineartoHLG(double x);
 double HLGtoLinear(double x);
-#define CLIP(x, min, max) ((x) < (min)) ? (min) : ((x) > (max)) ? (max) : (x)
-double ApplyToneMapping(double x, ToneMapping mode, double target_nits,
-                        double max_nits);
-
-void LinearRec2020toLinearsRGB(double &r, double &g, double &b);
-
 double LineartosRGB(double x);
 double sRGBtoLinear(double x);
+double LinearsHLGtoYUV(double x);
+double LinearsRGBtoYUV(double x);
 
+double ApplyToneMapping(double x, ToneMapping mode, double target_nits,
+                        double max_nits);
+void LinearRec2020toLinearsRGB(double &r, double &g, double &b);
+
+std::unique_ptr<PNGImage> HDRtoRAW(const std::unique_ptr<PNGImage> &hdr_image,
+                                   double clip_low, double clip_high,
+                                   utils::Error &error, ToneMapping mode);
 std::unique_ptr<PNGImage> HDRtoSDR(const std::unique_ptr<PNGImage> &hdr_image,
                                    double clip_low, double clip_high,
-                                   utils::Error &error,
-                                   ToneMapping mode);
-
+                                   utils::Error &error, ToneMapping mode);
 
 } // namespace imageops
 #endif
