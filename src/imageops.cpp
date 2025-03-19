@@ -1,24 +1,13 @@
 #include "imageops.hpp"
 #include "utils.h"
 #include <algorithm>
-#include <iostream>
 #include <cassert>
 #include <cmath>
 #include <filesystem>
+#include <iostream>
 #include <memory>
 #include <png.h>
 #include <vector>
-
-#define ASSERT(condition, fmt, ...) \
-    do { \
-        if (!(condition)) { \
-            char buffer[1024]; \
-            std::snprintf(buffer, sizeof(buffer), fmt, ##__VA_ARGS__); \
-            std::cerr << "Assertion failed: " << #condition << ", " << buffer \
-                      << ", file " << __FILE__ << ", line " << __LINE__ << std::endl; \
-            std::abort(); \
-        } \
-    } while (false)
 
 namespace imageops {
 
@@ -328,8 +317,10 @@ double LineartoHLG(double x) {
     const double b = 1.0 - 4.0 * a;               // 0.28466892;
     const double c = 0.5 - a * std::log(4.0 * a); // 0.55991073;
 
-    const double epsilon = 1e-6;  // Define a small epsilon for floating point comparison
-    ASSERT(-epsilon <= x && x <= (1.0 + epsilon), "Input should be in range [0, 1] for Rec2020, from %f", x);
+    const double epsilon =
+        1e-6; // Define a small epsilon for floating point comparison
+    ASSERT(-epsilon <= x && x <= (1.0 + epsilon),
+           "Input should be in range [0, 1] for Rec2020, from %f", x);
     // x = std::max(0.0, std::min(1.0, x));
 
     if (x <= 1.0 / 12.0) {
@@ -344,8 +335,10 @@ double HLGtoLinear(double x) {
     const double b = 1.0 - 4.0 * a;               // 0.28466892;
     const double c = 0.5 - a * std::log(4.0 * a); // 0.55991073;
 
-    const double epsilon = 1e-6;  // Define a small epsilon for floating point comparison
-    ASSERT(-epsilon <= x && x <= (1.0 + epsilon), "Input should be in range [0, 1] for Rec2020, from %f", x);
+    const double epsilon =
+        1e-6; // Define a small epsilon for floating point comparison
+    ASSERT(-epsilon <= x && x <= (1.0 + epsilon),
+           "Input should be in range [0, 1] for Rec2020, from %f", x);
     // x = std::max(0.0, std::min(1.0, x));
 
     if (x <= 0.5) {
@@ -354,6 +347,21 @@ double HLGtoLinear(double x) {
         return (std::exp((x - c) / a) + b) / 12.0;
     }
 }
+double DynamicRangeCompression(double x) {
+    // REVISIT:
+    x = CLIP(x, 0, 1.0);
+    double target_nits = 100.0;
+    double max_nits = 100.0;
+
+
+    x *= target_nits / max_nits;
+
+    // REVISIT: Improved tone mapping
+    // REINHARD, ACES, or HABLE
+    // x = x / (x + 1.0);
+    return x;
+}
+
 
 // Helper function for Rec.2020 to sRGB color space conversion
 void Rec2020toSRGB(double &r, double &g, double &b) {
@@ -372,6 +380,14 @@ void Rec2020toSRGB(double &r, double &g, double &b) {
     r = std::max(0.0, std::min(1.0, new_r));
     g = std::max(0.0, std::min(1.0, new_g));
     b = std::max(0.0, std::min(1.0, new_b));
+}
+
+double SRGBTransfer(double x) {
+    if (x <= 0.0031308f) {
+        return 12.92 * x;
+    } else {
+        return 1.055 * std::pow(x, 1.0 / 2.4f) - 0.055f;
+    }
 }
 
 std::unique_ptr<PNGImage> HDRtoSDR(const std::unique_ptr<PNGImage> &hdr_image,

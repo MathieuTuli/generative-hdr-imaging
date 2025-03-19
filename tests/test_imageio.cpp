@@ -6,7 +6,7 @@
 TEST_CASE("Helpers", "[imageops]") {
     double base = 10.0;
     double x;
-    for (int i = 0; i < 11; i++){
+    for (int i = 0; i < 10; i++){
         x = static_cast<double>(i + 1) / base;
         double hlg2l = imageops::HLGtoLinear(x);
         double l2hlg = imageops::LineartoHLG(hlg2l);
@@ -16,6 +16,17 @@ TEST_CASE("Helpers", "[imageops]") {
         hlg2l = imageops::HLGtoLinear(l2hlg);
         INFO("Base " << x << "| L2HLG " << l2hlg << "| HLG2L " << hlg2l);
         REQUIRE_THAT(hlg2l, Catch::Matchers::WithinRel(x, 1e-6));
+    }
+
+    SECTION("Invalid inputs") {
+        REQUIRE_THROWS_AS(imageops::HLGtoLinear(-1.0), std::runtime_error);
+        REQUIRE_THROWS_AS(imageops::LineartoHLG(-1.0), std::runtime_error);
+
+        REQUIRE_THROWS_AS(imageops::HLGtoLinear(std::numeric_limits<double>::quiet_NaN()), std::runtime_error);
+        REQUIRE_THROWS_AS(imageops::LineartoHLG(std::numeric_limits<double>::quiet_NaN()), std::runtime_error);
+
+        REQUIRE_THROWS_AS(imageops::HLGtoLinear(std::numeric_limits<double>::infinity()), std::runtime_error);
+        REQUIRE_THROWS_AS(imageops::LineartoHLG(std::numeric_limits<double>::infinity()), std::runtime_error);
     }
 }
 

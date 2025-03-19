@@ -101,9 +101,15 @@ bool WritetoPNG(const std::unique_ptr<PNGImage> &image,
 // ----------------------------------------
 // CONVERSION
 // ----------------------------------------
+// HLG -> LINEAR -> CLIP/COMPRESSION/HDR-SDR TONEMAP -> COLOR SPACE -> SRGB TONEMAP -> QUANT
 double LineartoHLG(double x);
 double HLGtoLinear(double x);
+#define CLIP(x, min, max) ((x) < (min)) ? (min) : ((x) > (max)) ? (max) : (x)
+double DynamicRangeCompression(double x);
+
 void Rec2020toSRGB(double &r, double &g, double &b);
+
+double SRGBTransfer(double x);
 
 std::unique_ptr<PNGImage> HDRtoSDR(const std::unique_ptr<PNGImage> &hdr_image,
                                    const SDRConversionParams &params,

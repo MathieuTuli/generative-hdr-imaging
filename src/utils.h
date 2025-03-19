@@ -3,6 +3,16 @@
 
 #include <string>
 
+#define ASSERT(condition, fmt, ...) \
+    do { \
+        if (!(condition)) { \
+            char buffer[1024]; \
+            std::snprintf(buffer, sizeof(buffer), fmt, ##__VA_ARGS__); \
+            std::cerr << "Assertion failed: " << #condition << ", " << buffer \
+                      << ", file " << __FILE__ << ", line " << __LINE__ << std::endl; \
+            throw std::runtime_error(""); \
+        } \
+    } while (false)
 namespace utils {
 
 struct Error {
