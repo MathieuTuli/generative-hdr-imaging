@@ -485,10 +485,10 @@ double sRGBtoLinear(double x) {
     }
 }
 
-std::unique_ptr<PNGImage> HDRtoSDR(const std::unique_ptr<PNGImage> &hdr_image,
-                                   double clip_low, double clip_high,
-                                   utils::Error &error,
-                                   ToneMapping mode = ToneMapping::BASE) {
+std::unique_ptr<PNGImage>
+HDRtoSDR(const std::unique_ptr<PNGImage> &hdr_image, double clip_low,
+         double clip_high, utils::Error &error,
+         ToneMapping tone_mapping = ToneMapping::BASE) {
     if (!hdr_image || !hdr_image->row_pointers) {
         error = {true, "Invalid input HDR image"};
         return nullptr;
@@ -561,11 +561,11 @@ std::unique_ptr<PNGImage> HDRtoSDR(const std::unique_ptr<PNGImage> &hdr_image,
             b = HLGtoLinear(b);
             // REVISIT: what to clip to?
             r = CLIP(r, 0.0, 1.0);
-            g = CLIP(r, 0.0, 1.0);
-            b = CLIP(r, 0.0, 1.0);
-            r = ApplyToneMapping(r, ToneMapping::REINHARD);
-            g = ApplyToneMapping(g, ToneMapping::REINHARD);
-            b = ApplyToneMapping(b, ToneMapping::REINHARD);
+            g = CLIP(g, 0.0, 1.0);
+            b = CLIP(b, 0.0, 1.0);
+            r = ApplyToneMapping(r, tone_mapping);
+            g = ApplyToneMapping(g, tone_mapping);
+            b = ApplyToneMapping(b, tone_mapping);
             LinearRec2020toLinearsRGB(r, g, b);
             r = LineartosRGB(r);
             g = LineartosRGB(g);
