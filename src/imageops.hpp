@@ -97,7 +97,7 @@ ImageMetadata ReadAVIFMetadata(const std::string &filename,
 ImageMetadata ReadHDRPNGMetadata(const std::string &filename,
                                  utils::Error &error);
 
-bool WritetoPNG(const std::unique_ptr<PNGImage> &image,
+bool WriteToPNG(const std::unique_ptr<PNGImage> &image,
                 const std::string &filename, utils::Error &error);
 
 // ----------------------------------------
@@ -110,21 +110,25 @@ bool WritetoPNG(const std::unique_ptr<PNGImage> &image,
 // 5. sRGB TONEMAP/TRANSFER ->
 // 6. QUANT
 #define CLIP(x, min, max) ((x) < (min)) ? (min) : ((x) > (max)) ? (max) : (x)
-double LineartoHLG(double x);
-double HLGtoLinear(double x);
-double LineartosRGB(double x);
-double sRGBtoLinear(double x);
-double LinearsHLGtoYUV(double x);
-double LinearsRGBtoYUV(double x);
+double LinearToRec2020HLG(double x);
+double Rec2020HLGToLinear(double x);
+double LinearToRec2020Gamma(double x);
+double Rec2020GammaToLinear(double x);
+double LinearToP3PQ(double x);
+double P3PQToLinear(double x);
+double LinearTosRGB(double x);
+double sRGBToLinear(double x);
+double LinearsHLGToYUV(double x);
+double LinearsRGBToYUV(double x);
 
 double ApplyToneMapping(double x, ToneMapping mode, double target_nits,
                         double max_nits);
-void LinearRec2020toLinearsRGB(double &r, double &g, double &b);
+void LinearRec2020ToLinearsRGB(double &r, double &g, double &b);
 
-std::unique_ptr<PNGImage> HDRtoRAW(const std::unique_ptr<PNGImage> &hdr_image,
+std::unique_ptr<PNGImage> HDRToRAW(const std::unique_ptr<PNGImage> &hdr_image,
                                    double clip_low, double clip_high,
                                    utils::Error &error, ToneMapping mode);
-std::unique_ptr<PNGImage> HDRtoSDR(const std::unique_ptr<PNGImage> &hdr_image,
+std::unique_ptr<PNGImage> HDRToSDR(const std::unique_ptr<PNGImage> &hdr_image,
                                    double clip_low, double clip_high,
                                    utils::Error &error, ToneMapping mode);
 

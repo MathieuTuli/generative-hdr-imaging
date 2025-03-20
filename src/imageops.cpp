@@ -266,7 +266,7 @@ ImageMetadata ReadHDRPNGMetadata(const std::string &filename,
     return metadata;
 }
 
-bool WritetoPNG(const std::unique_ptr<PNGImage> &image,
+bool WriteToPNG(const std::unique_ptr<PNGImage> &image,
                 const std::string &filename, utils::Error &error) {
     if (!image) {
         error = {true, "Invalid image pointer"};
@@ -334,14 +334,18 @@ bool WritetoPNG(const std::unique_ptr<PNGImage> &image,
 // ----------------------------------------
 // CONVERSION
 // ----------------------------------------
-double LineartoHLG(double x) {
+// sRGB, Display P3: sRGBtoLinear/LineartosRGB
+// Rec2020 HLG: Rec2020HLGtoLinear/LineartoRec2020HLG
+// Rec2020 Gamma: Rec2020GammatoLinear/LineartoRec2020Gamma
+// P3 PQ: P3PQtoLinear/LineartoP3PQ
+
+double LinearToRec2020HLG(double x) {
     /* Follows ITU-R BT.2100-2 */
     const double a = 0.17883277;
     const double b = 1.0 - 4.0 * a;               // 0.28466892;
     const double c = 0.5 - a * std::log(4.0 * a); // 0.55991073;
 
-    const double epsilon =
-        1e-6; // Define a small epsilon for floating point comparison
+    const double epsilon = 1e-6;
     ASSERT(-epsilon <= x && x <= (1.0 + epsilon),
            "Input should be in range [0, 1] for Rec2020, from %f", x);
     // x = std::max(0.0, std::min(1.0, x));
@@ -353,14 +357,13 @@ double LineartoHLG(double x) {
     }
 }
 
-double HLGtoLinear(double x) {
+double Rec2020HLGToLinear(double x) {
     /* Follows ITU-R BT.2100-2 */
     const double a = 0.17883277;
     const double b = 1.0 - 4.0 * a;               // 0.28466892;
     const double c = 0.5 - a * std::log(4.0 * a); // 0.55991073;
 
-    const double epsilon =
-        1e-6; // Define a small epsilon for floating point comparison
+    const double epsilon = 1e-6;
     ASSERT(-epsilon <= x && x <= (1.0 + epsilon),
            "Input should be in range [0, 1] for Rec2020, from %f", x);
     // x = std::max(0.0, std::min(1.0, x));
@@ -372,10 +375,82 @@ double HLGtoLinear(double x) {
     }
 }
 
+double Rec2020GammaToLinear(double x) {
+    const double alpha = 1.09929682680944;
+    const double beta = 0.018053968510807;
+    const double epsilon = 1e-6;
+    ASSERT(-epsilon <= x && x <= (1.0 + epsilon),
+           "Input should be in range [0, 1] for Rec2020, from %f", x);
 
-double LineartosRGB(double x) {
-    const double epsilon =
-        1e-6; // Define a small epsilon for floating point comparison
+    if (x < beta * 4.5) {
+        return x / 4.5;
+    } else {
+        return std::pow((x + alpha - 1) / alpha, 1 / 0.45);
+    }
+}
+
+double LinearToRec2020Gamma(double x) {
+    const double alpha = 1.09929682680944;
+    const double beta = 0.018053968510807;
+    const double epsilon = 1e-6;
+    ASSERT(-epsilon <= x && x <= (1.0 + epsilon),
+           "Input should be in range [0, 1] for Rec2020, from %f", x);
+
+    if (x < beta) {
+        return x * 4.5;
+    } else {
+        return alpha * std::pow(x, 0.45) - (alpha - 1);
+    }
+}
+
+double P3PQToLinear(double x) {
+    const double epsilon = 1e-6;
+    ASSERT(-epsilon <= x && x <= (1.0 + epsilon),
+           "Input should be in range [0, 1], from %f", x);
+    // SMPTE ST 2084 constants
+    const double m1 = 0.1593017578125;
+    const double m2 = 78.84375;
+    const double c1 = 0.8359375;
+    const double c2 = 18.8515625;
+    const double c3 = 18.6875;
+
+    double xpow = std::pow(x, 1.0 / m2);
+    double num = std::max(x - c1, 0.0);
+    double den = c2 - c3 * xpow;
+
+    // REVISIT:
+    // Result is in nits (cd/m²), normalized by 10000 nits
+    // For typical display, you may need to adjust this scale factor
+    return 10000.0 * pow(num / den, 1.0 / m1) / 10000.0;
+}
+
+double LinearToP3PQ(double x) {
+    const double epsilon = 1e-6;
+    ASSERT(-epsilon <= x && x <= (1.0 + epsilon),
+           "Input should be in range [0, 1], from %f", x);
+    // REVISIT:
+    // assumes normalization by 10_000 nits
+    const double m1 = 0.1593017578125;
+    const double m2 = 78.84375;
+    const double c1 = 0.8359375;
+    const double c2 = 18.8515625;
+    const double c3 = 18.6875;
+
+    // Convert from [0,1] range to absolute nits (assuming 10000 nits max)
+    double y = x * 10000.0;
+
+    // Clamp input to avoid NaN/infinity issues
+    y = std::max(0.0, y);
+
+    double ym1 = pow(y, m1);
+    double num = c1 + c2 * ym1;
+    double den = 1.0 + c3 * ym1;
+
+    return pow(num / den, m2);
+}
+
+double LinearTosRGB(double x) {
+    const double epsilon = 1e-6;
     ASSERT(-epsilon <= x && x <= (1.0 + epsilon),
            "Input should be in range [0, 1], from %f", x);
     if (x <= 0.0031308) {
@@ -385,9 +460,8 @@ double LineartosRGB(double x) {
     }
 }
 
-double sRGBtoLinear(double x) {
-    const double epsilon =
-        1e-6; // Define a small epsilon for floating point comparison
+double sRGBToLinear(double x) {
+    const double epsilon = 1e-6;
     ASSERT(-epsilon <= x && x <= (1.0 + epsilon),
            "Input should be in range [0, 1], from %f", x);
     if (x <= 0.04045) {
@@ -397,14 +471,120 @@ double sRGBtoLinear(double x) {
     }
 }
 
-double LinearsHLGtoYUV(double x){
-    return 0.0;
+std::vector<double> LinearRec2020GammaToYUV(double r, double g, double b) {
+    ASSERT(0.0 <= r && r <= 1.0 && 0.0 <= g && g <= 1.0 && 0.0 <= b && b <= 1.0,
+           "Input values must be in range [0, 1]");
+
+    // already assumes linear rec2020
+    // double linearR = rec2020GammaToLinear(r);
+    // double linearG = rec2020GammaToLinear(g);
+    // double linearB = rec2020GammaToLinear(b);
+
+    const double Kr = 0.2627;
+    const double Kg = 0.6780;
+    const double Kb = 0.0593;
+
+    double y = Kr * r + Kg * g + Kb * b;
+
+    double u = 0.5 * (b - y) / (1.0 - Kb);
+    double v = 0.5 * (r - y) / (1.0 - Kr);
+
+    return {y, u, v};
 }
 
-double LinearsRGBtoYUV(double &r, double &g, double &b){
-  // float y_gamma = srgbLuminance(e_gamma);
-  // return {{{y_gamma, (e_gamma.b - y_gamma) / kSrgbCb, (e_gamma.r - y_gamma) / kSrgbCr}}};
-  return 0.0;
+std::vector<double> sRGBToYuv(double r, double g, double b) {
+    ASSERT(0.0 <= r && r <= 1.0 && 0.0 <= g && g <= 1.0 && 0.0 <= b && b <= 1.0,
+           "Input values must be in range [0, 1]");
+
+    // double linearR = displayP3GammaToLinear(r);
+    // double linearG = displayP3GammaToLinear(g);
+    // double linearB = displayP3GammaToLinear(b);
+    
+    // display p3 primaries with d65 white point
+    const double p3_to_xyz[3][3] = {
+        {0.4865709486482162, 0.2656676931690931, 0.1982172852343625},
+        {0.2289745640697488, 0.6917385218365064, 0.0792869140937449},
+        {0.0000000000000000, 0.0451133819445285, 1.0439443689009757}
+    };
+    
+    double x = p3_to_xyz[0][0] * r + p3_to_xyz[0][1] * g + p3_to_xyz[0][2] * b;
+    double y = p3_to_xyz[1][0] * r + p3_to_xyz[1][1] * g + p3_to_xyz[1][2] * b;
+    double z = p3_to_xyz[2][0] * r + p3_to_xyz[2][1] * g + p3_to_xyz[2][2] * b;
+    
+    // Rec.709 RGB is standard for yuv
+    const double xyz_to_rec709[3][3] = {
+        { 3.2404542, -1.5371385, -0.4985314},
+        {-0.9692660,  1.8760108,  0.0415560},
+        { 0.0556434, -0.2040259,  1.0572252}
+    };
+    
+    r = xyz_to_rec709[0][0] * x + xyz_to_rec709[0][1] * y + xyz_to_rec709[0][2] * z;
+    g = xyz_to_rec709[1][0] * x + xyz_to_rec709[1][1] * y + xyz_to_rec709[1][2] * z;
+    b = xyz_to_rec709[2][0] * x + xyz_to_rec709[2][1] * y + xyz_to_rec709[2][2] * z;
+    
+    // clamp to [0,1] range to handle colors outside rec.709 gamut
+    r = CLIP(r, 0.0, 1.0);
+    g = CLIP(g, 0.0, 1.0);
+    b = CLIP(b, 0.0, 1.0);
+    
+    const double Kr = 0.2126;
+    const double Kg = 0.7152;
+    const double Kb = 0.0722;
+    
+    y = Kr * r + Kg * g + Kb * b;
+    double u = 0.5 * (b - y) / (1.0 - Kb);
+    double v = 0.5 * (r - y) / (1.0 - Kr);
+    
+    return {y, u, v};
+}
+
+std::vector<double> P3PQToYUV(double r, double g, double b) {
+    ASSERT(0.0 <= r && r <= 1.0 && 0.0 <= g && g <= 1.0 && 0.0 <= b && b <= 1.0,
+           "Input values must be in range [0, 1]");
+
+    // double linearR = pqToLinear(r);
+    // double linearG = pqToLinear(g);
+    // double linearB = pqToLinear(b);
+    
+    // Convert from P3 linear RGB to XYZ
+    // Using P3 primaries with D65 white point (for Display P3)
+    const double p3_to_xyz[3][3] = {
+        {0.4865709486482162, 0.2656676931690931, 0.1982172852343625},
+        {0.2289745640697488, 0.6917385218365064, 0.0792869140937449},
+        {0.0000000000000000, 0.0451133819445285, 1.0439443689009757}
+    };
+    
+    double x = p3_to_xyz[0][0] * r + p3_to_xyz[0][1] * g + p3_to_xyz[0][2] * b;
+    double y = p3_to_xyz[1][0] * r + p3_to_xyz[1][1] * g + p3_to_xyz[1][2] * b;
+    double z = p3_to_xyz[2][0] * r + p3_to_xyz[2][1] * g + p3_to_xyz[2][2] * b;
+    
+    // convert from xyz to rec.2020 rgb (wider gamut appropriate for hdr)
+    const double xyz_to_rec2020[3][3] = {
+        { 1.7166511880, -0.3556707838, -0.2533662814},
+        {-0.6666843518,  1.6164812366,  0.0157685458},
+        { 0.0176398574, -0.0427706133,  0.9421031212}
+    };
+    
+    r = xyz_to_rec2020[0][0] * x + xyz_to_rec2020[0][1] * y + xyz_to_rec2020[0][2] * z;
+    g = xyz_to_rec2020[1][0] * x + xyz_to_rec2020[1][1] * y + xyz_to_rec2020[1][2] * z;
+    b = xyz_to_rec2020[2][0] * x + xyz_to_rec2020[2][1] * y + xyz_to_rec2020[2][2] * z;
+    
+    r = CLIP(r, 0.0, 1.0);
+    g = CLIP(g, 0.0, 1.0);
+    b = CLIP(b, 0.0, 1.0);
+    
+    // Use BT.2020 luma coefficients
+    const double Kr = 0.2627;
+    const double Kg = 0.6780;
+    const double Kb = 0.0593;
+    
+    y = Kr * r + Kg * g + Kb * b;
+    
+    // Calculate U and V (chroma)
+    double u = 0.5 * (b - y) / (1.0 - Kb);
+    double v = 0.5 * (r - y) / (1.0 - Kr);
+    
+    return {y, u, v};
 }
 
 double ApplyToneMapping(double x, ToneMapping mode, double target_nits = 100.0,
@@ -486,7 +666,7 @@ double ApplyToneMapping(double x, ToneMapping mode, double target_nits = 100.0,
     return x;
 }
 
-void LinearRec2020toLinearsRGB(double &r, double &g, double &b) {
+void LinearRec2020ToLinearsRGB(double &r, double &g, double &b) {
     // using D65 white point
     // standard RGB primaries and white point
     // const double matrix[3][3] = {{1.6605, -0.5876, -0.0728},
@@ -563,9 +743,9 @@ HDRtoRAW(const std::unique_ptr<PNGImage> &hdr_image, double clip_low,
             double g = (values[1] / 65535.0);
             double b = (values[2] / 65535.0);
 
-            r = HLGtoLinear(r);
-            g = HLGtoLinear(g);
-            b = HLGtoLinear(b);
+            r = Rec2020HLGToLinear(r);
+            g = Rec2020HLGToLinear(g);
+            b = Rec2020HLGToLinear(b);
             // REVISIT: what to clip to?
             r = CLIP(r, 0.0, 1.0);
             g = CLIP(g, 0.0, 1.0);
@@ -581,7 +761,7 @@ HDRtoRAW(const std::unique_ptr<PNGImage> &hdr_image, double clip_low,
 }
 
 std::unique_ptr<PNGImage>
-HDRtoSDR(const std::unique_ptr<PNGImage> &hdr_image, double clip_low,
+HDRToSDR(const std::unique_ptr<PNGImage> &hdr_image, double clip_low,
          double clip_high, utils::Error &error,
          ToneMapping tone_mapping = ToneMapping::BASE) {
     if (!hdr_image || !hdr_image->row_pointers) {
@@ -589,7 +769,7 @@ HDRtoSDR(const std::unique_ptr<PNGImage> &hdr_image, double clip_low,
         return nullptr;
     }
 
-    auto sdr_image = std::make_unique<PNGImage>();
+    std::unique_ptr<PNGImage> sdr_image = std::make_unique<PNGImage>();
     sdr_image->width = hdr_image->width;
     sdr_image->height = hdr_image->height;
     sdr_image->color_type = PNG_COLOR_TYPE_RGB;
@@ -651,9 +831,9 @@ HDRtoSDR(const std::unique_ptr<PNGImage> &hdr_image, double clip_low,
             double g = (values[1] / 65535.0);
             double b = (values[2] / 65535.0);
 
-            r = HLGtoLinear(r);
-            g = HLGtoLinear(g);
-            b = HLGtoLinear(b);
+            r = Rec2020HLGToLinear(r);
+            g = Rec2020HLGToLinear(g);
+            b = Rec2020HLGToLinear(b);
             // REVISIT: what to clip to?
             r = CLIP(r, 0.0, 1.0);
             g = CLIP(g, 0.0, 1.0);
@@ -661,10 +841,10 @@ HDRtoSDR(const std::unique_ptr<PNGImage> &hdr_image, double clip_low,
             r = ApplyToneMapping(r, tone_mapping);
             g = ApplyToneMapping(g, tone_mapping);
             b = ApplyToneMapping(b, tone_mapping);
-            LinearRec2020toLinearsRGB(r, g, b);
-            r = LineartosRGB(r);
-            g = LineartosRGB(g);
-            b = LineartosRGB(b);
+            LinearRec2020ToLinearsRGB(r, g, b);
+            r = LinearTosRGB(r);
+            g = LinearTosRGB(g);
+            b = LinearTosRGB(b);
 
             sdr_row[sdr_idx + 0] =
                 static_cast<uint8_t>(CLIP(r * 255.0, 0.0, 255.0));

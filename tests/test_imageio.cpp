@@ -9,39 +9,39 @@ TEST_CASE("Helpers", "[imageops]") {
     for (int i = 0; i < 10; i++){
         x = static_cast<double>(i + 1) / base;
 
-        double hlg2l = imageops::HLGtoLinear(x);
-        double l2hlg = imageops::LineartoHLG(hlg2l);
+        double hlg2l = imageops::Rec2020HLGToLinear(x);
+        double l2hlg = imageops::LinearToRec2020HLG(hlg2l);
         REQUIRE_THAT(l2hlg, Catch::Matchers::WithinRel(x, 1e-6));
-        l2hlg = imageops::LineartoHLG(x);
-        hlg2l = imageops::HLGtoLinear(l2hlg);
+        l2hlg = imageops::LinearToRec2020HLG(x);
+        hlg2l = imageops::Rec2020HLGToLinear(l2hlg);
         REQUIRE_THAT(hlg2l, Catch::Matchers::WithinRel(x, 1e-6));
 
-        double srgb2l = imageops::sRGBtoLinear(x);
-        double l2srgb = imageops::LineartosRGB(srgb2l);
+        double srgb2l = imageops::sRGBToLinear(x);
+        double l2srgb = imageops::LinearTosRGB(srgb2l);
         REQUIRE_THAT(l2srgb, Catch::Matchers::WithinRel(x, 1e-6));
-        l2srgb = imageops::LineartosRGB(x);
-        srgb2l = imageops::sRGBtoLinear(l2srgb);
+        l2srgb = imageops::LinearTosRGB(x);
+        srgb2l = imageops::sRGBToLinear(l2srgb);
         REQUIRE_THAT(srgb2l, Catch::Matchers::WithinRel(x, 1e-6));
     }
 
     SECTION("Invalid inputs") {
-        REQUIRE_THROWS_AS(imageops::HLGtoLinear(-1.0), std::runtime_error);
-        REQUIRE_THROWS_AS(imageops::LineartoHLG(-1.0), std::runtime_error);
+        REQUIRE_THROWS_AS(imageops::Rec2020HLGToLinear(-1.0), std::runtime_error);
+        REQUIRE_THROWS_AS(imageops::LinearToRec2020HLG(-1.0), std::runtime_error);
 
-        REQUIRE_THROWS_AS(imageops::HLGtoLinear(std::numeric_limits<double>::quiet_NaN()), std::runtime_error);
-        REQUIRE_THROWS_AS(imageops::LineartoHLG(std::numeric_limits<double>::quiet_NaN()), std::runtime_error);
+        REQUIRE_THROWS_AS(imageops::Rec2020HLGToLinear(std::numeric_limits<double>::quiet_NaN()), std::runtime_error);
+        REQUIRE_THROWS_AS(imageops::LinearToRec2020HLG(std::numeric_limits<double>::quiet_NaN()), std::runtime_error);
 
-        REQUIRE_THROWS_AS(imageops::HLGtoLinear(std::numeric_limits<double>::infinity()), std::runtime_error);
-        REQUIRE_THROWS_AS(imageops::LineartoHLG(std::numeric_limits<double>::infinity()), std::runtime_error);
+        REQUIRE_THROWS_AS(imageops::Rec2020HLGToLinear(std::numeric_limits<double>::infinity()), std::runtime_error);
+        REQUIRE_THROWS_AS(imageops::LinearToRec2020HLG(std::numeric_limits<double>::infinity()), std::runtime_error);
 
-        REQUIRE_THROWS_AS(imageops::sRGBtoLinear(-1.0), std::runtime_error);
-        REQUIRE_THROWS_AS(imageops::LineartosRGB(-1.0), std::runtime_error);
+        REQUIRE_THROWS_AS(imageops::sRGBToLinear(-1.0), std::runtime_error);
+        REQUIRE_THROWS_AS(imageops::LinearTosRGB(-1.0), std::runtime_error);
 
-        REQUIRE_THROWS_AS(imageops::sRGBtoLinear(std::numeric_limits<double>::quiet_NaN()), std::runtime_error);
-        REQUIRE_THROWS_AS(imageops::LineartosRGB(std::numeric_limits<double>::quiet_NaN()), std::runtime_error);
+        REQUIRE_THROWS_AS(imageops::sRGBToLinear(std::numeric_limits<double>::quiet_NaN()), std::runtime_error);
+        REQUIRE_THROWS_AS(imageops::LinearTosRGB(std::numeric_limits<double>::quiet_NaN()), std::runtime_error);
 
-        REQUIRE_THROWS_AS(imageops::sRGBtoLinear(std::numeric_limits<double>::infinity()), std::runtime_error);
-        REQUIRE_THROWS_AS(imageops::LineartosRGB(std::numeric_limits<double>::infinity()), std::runtime_error);
+        REQUIRE_THROWS_AS(imageops::sRGBToLinear(std::numeric_limits<double>::infinity()), std::runtime_error);
+        REQUIRE_THROWS_AS(imageops::LinearTosRGB(std::numeric_limits<double>::infinity()), std::runtime_error);
     }
 }
 
@@ -66,11 +66,11 @@ TEST_CASE("PNG", "[imageops]") {
 
     for (const auto &[tone_mapper, name] : tone_mappers) {
         std::unique_ptr<imageops::PNGImage> sdr_image =
-            imageops::HDRtoSDR(image, 0.0, 1.0, error, tone_mapper);
+            imageops::HDRToSDR(image, 0.0, 1.0, error, tone_mapper);
         REQUIRE_FALSE(error.raise);
 
         std::string output_path = "./images/test_hdr_png_" + name + ".png";
-        bool ret = imageops::WritetoPNG(sdr_image, output_path, error);
+        bool ret = imageops::WriteToPNG(sdr_image, output_path, error);
         if (error.raise) {
             INFO("Failed to write " + name + " tone mapping: " + error.message);
         }
