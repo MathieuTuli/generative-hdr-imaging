@@ -6,12 +6,12 @@
 
 #define PROGRAM_VERSION "1.0.0"
 
-enum class ConversionMode { HDR_TO_RAW, HDR_TO_SDR };
+enum class ConversionMode { HDR_TO_YUV, HDR_TO_SDR };
 
 void PrintUsage(const char *programName) {
     std::cout << "Usage: " << programName << " [OPTIONS]\n"
               << "\nOptions:\n"
-              << "  -r, --hdr2raw       Convert HDR to RAW\n"
+              << "  -r, --hdr2raw       Convert HDR to YUV\n"
               << "  -s, --hdr2sdr       Convert HDR to SDR\n"
               << "  -i, --input=FILE    Input image file\n"
               << "  -o, --output=FILE   Output image file\n"
@@ -66,7 +66,7 @@ int main(int argc, char *argv[]) {
                 std::cerr << "Error: Only one mode can be specified\n";
                 return 1;
             }
-            mode = ConversionMode::HDR_TO_RAW;
+            mode = ConversionMode::HDR_TO_YUV;
             mode_set = true;
             break;
         case 's':
@@ -113,10 +113,10 @@ int main(int argc, char *argv[]) {
 
     std::unique_ptr<imageops::PNGImage> output_image;
     switch (mode) {
-    case ConversionMode::HDR_TO_RAW:
-        std::cout << "Converting HDR to RAW..." << std::endl;
+    case ConversionMode::HDR_TO_YUV:
+        std::cout << "Converting HDR to YUV..." << std::endl;
         // TODO: clip low/high, and nits params in bas computation?
-        output_image = imageops::HDRtoRAW(hdr_image, 1.0, 1.0, error,
+        output_image = imageops::HDRToYUV(hdr_image, 1.0, 1.0, error,
                                           imageops::ToneMapping::BASE);
         if (error.raise) {
             std::cerr << "Failed to convert to SDR: " << error.message
@@ -127,7 +127,7 @@ int main(int argc, char *argv[]) {
 
     case ConversionMode::HDR_TO_SDR:
         std::cout << "Converting HDR to SDR..." << std::endl;
-        output_image = imageops::HDRtoSDR(hdr_image, 0.0, 1.0, error,
+        output_image = imageops::HDRToSDR(hdr_image, 0.0, 1.0, error,
                                           imageops::ToneMapping::BASE);
         if (error.raise) {
             std::cerr << "Failed to convert to SDR: " << error.message
@@ -138,7 +138,7 @@ int main(int argc, char *argv[]) {
     }
 
     std::cout << "Saving output image: " << output_file << std::endl;
-    if (!imageops::WritetoPNG(output_image, output_file, error)) {
+    if (!imageops::WriteToPNG(output_image, output_file, error)) {
         std::cerr << "Failed to save image: " << error.message << std::endl;
         return 1;
     }

@@ -1,4 +1,5 @@
 #include "imageops.hpp"
+#include "npy.hpp"
 #include "utils.h"
 #include <algorithm>
 #include <cassert>
@@ -189,6 +190,7 @@ ImageMetadata ReadAVIFMetadata(const std::string &filename,
 ImageMetadata ReadHDRPNGMetadata(const std::string &filename,
                                  utils::Error &error) {
     ImageMetadata metadata;
+    /*
     // Set default values for P3 HLG
     metadata.color_space = "Display P3";
     metadata.transfer_function = "HLG";
@@ -292,6 +294,7 @@ ImageMetadata ReadHDRPNGMetadata(const std::string &filename,
 
     png_destroy_read_struct(&png, &info, nullptr);
     fclose(fp);
+    */
     return metadata;
 }
 
@@ -357,6 +360,64 @@ bool WriteToPNG(const std::unique_ptr<PNGImage> &image,
 
     fclose(fp);
     png_destroy_write_struct(&png, &info);
+    return true;
+}
+
+bool WriteToNumpy(const std::vector<double> &data, int width, int height,
+                  int channels, const std::string &dtype_str,
+                  const std::string &output_path, utils::Error &error) {
+
+    if (data.size() != static_cast<size_t>(width * height * channels)) {
+        error = {true,
+                 "Error: Data size doesn't match the specified dimensions"};
+        return false;
+    }
+
+    std::vector<long unsigned> shape = {static_cast<long unsigned>(height),
+                                        static_cast<long unsigned>(width),
+                                        static_cast<long unsigned>(channels)};
+
+    try {
+        // Create the appropriate NumPy array based on dtype
+        if (dtype_str == "float64" || dtype_str == "float") {
+            // For float64, we can use the original data directly
+            npy::SaveArrayAsNumpy(output_path, false, shape.size(),
+                                  shape.data(), data);
+        } else if (dtype_str == "float32") {
+            // Convert to float32
+            std::vector<float> float_data(data.size());
+            for (size_t i = 0; i < data.size(); ++i) {
+                float_data[i] = static_cast<float>(data[i]);
+            }
+            npy::SaveArrayAsNumpy(output_path, false, shape.size(),
+                                  shape.data(), float_data);
+        } else if (dtype_str == "uint8") {
+            // Convert to uint8 with clamping
+            std::vector<uint8_t> uint8_data(data.size());
+            for (size_t i = 0; i < data.size(); ++i) {
+                // Clamp values between 0 and 255 for uint8
+                uint8_data[i] = static_cast<uint8_t>(
+                    std::max(0.0, std::min(255.0, data[i])));
+            }
+            npy::SaveArrayAsNumpy(output_path, false, shape.size(),
+                                  shape.data(), uint8_data);
+        } else if (dtype_str == "int32" || dtype_str == "int") {
+            // Convert to int32
+            std::vector<int32_t> int32_data(data.size());
+            for (size_t i = 0; i < data.size(); ++i) {
+                int32_data[i] = static_cast<int32_t>(data[i]);
+            }
+            npy::SaveArrayAsNumpy(output_path, false, shape.size(),
+                                  shape.data(), int32_data);
+        } else {
+            error = {true, "Error: Unsupported dtype: " + dtype_str};
+            return false;
+        }
+    } catch (const std::exception &e) {
+        error = {true, "Error: Exception occurred while saving NumPy array: " +
+                           std::string(e.what())};
+        return false;
+    }
     return true;
 }
 
@@ -799,10 +860,9 @@ double ApplyToneMapping(double x, ToneMapping mode, double target_nits = 100.0,
     return x;
 }
 
-std::unique_ptr<PNGImage>
-HDRtoRAW(const std::unique_ptr<PNGImage> &hdr_image, double clip_low,
-         double clip_high, utils::Error &error,
-         ToneMapping tone_mapping = ToneMapping::BASE) {
+std::unique_ptr<PNGImage> HDRToYUV(const std::unique_ptr<PNGImage> &hdr_image,
+                                   double clip_low, double clip_high,
+                                   utils::Error &error, ToneMapping mode) {
     if (!hdr_image || !hdr_image->row_pointers) {
         error = {true, "Invalid input HDR image"};
         return nullptr;
@@ -839,9 +899,9 @@ HDRtoRAW(const std::unique_ptr<PNGImage> &hdr_image, double clip_low,
                 values[i] = (hdr_row[idx] << 8) | hdr_row[idx + 1];
             }
 
-            double r = (values[0] / 65535.0);
-            double g = (values[1] / 65535.0);
-            double b = (values[2] / 65535.0);
+            double r = (static_cast<double>(values[0]) / 65535.0);
+            double g = (static_cast<double>(values[1]) / 65535.0);
+            double b = (static_cast<double>(values[2]) / 65535.0);
 
             r = Rec2020HLGToLinear(r);
             g = Rec2020HLGToLinear(g);
@@ -885,32 +945,30 @@ HDRToSDR(const std::unique_ptr<PNGImage> &hdr_image, double clip_low,
 
     const size_t channels = 3;
 
-    /*
-    double max_value = 0.0;
-    if (params.auto_clip) {
-        std::vector<double> all_values;
-        all_values.reserve(hdr_image->width * hdr_image->height * channels);
-
-        for (size_t y = 0; y < hdr_image->height; y++) {
-            png_bytep row = hdr_image->row_pointers[y];
-            for (size_t x = 0; x < hdr_image->width; x++) {
-                for (size_t c = 0; c < channels; c++) {
-                    size_t idx = x * channels + c;
-                    // Convert 16-bit value to float [0,1]
-                    uint16_t value = (row[idx * 2] << 8) | row[idx * 2 + 1];
-                    all_values.push_back(value / 65535.0);
-                }
-            }
-        }
-
-        // Sort to find 99.9th percentile
-        std::sort(all_values.begin(), all_values.end());
-        size_t percentile_idx = static_cast<size_t>(all_values.size() * 0.999);
-        max_value = all_values[percentile_idx];
-    } else {
-        max_value = params.clip_high > 0 ? params.clip_high : 1.0;
-    }
-    */
+    // REVISIT:
+    // double max_value = 0.0;
+    // if (params.auto_clip) {
+    //     std::vector<double> all_values;
+    //     all_values.reserve(hdr_image->width * hdr_image->height * channels);
+    //     for (size_t y = 0; y < hdr_image->height; y++) {
+    //         png_bytep row = hdr_image->row_pointers[y];
+    //         for (size_t x = 0; x < hdr_image->width; x++) {
+    //             for (size_t c = 0; c < channels; c++) {
+    //                 size_t idx = x * channels + c;
+    //                 // Convert 16-bit value to float [0,1]
+    //                 uint16_t value = (row[idx * 2] << 8) | row[idx * 2 + 1];
+    //                 all_values.push_back(value / 65535.0);
+    //             }
+    //         }
+    //     }
+    //     // Sort to find 99.9th percentile
+    //     std::sort(all_values.begin(), all_values.end());
+    //     size_t percentile_idx = static_cast<size_t>(all_values.size() * 0.999);
+    //     max_value = all_values[percentile_idx];
+    // } else {
+    //     max_value = params.clip_high > 0 ? params.clip_high : 1.0;
+    // }
+    
 
     for (size_t y = 0; y < hdr_image->height; y++) {
         png_bytep hdr_row = hdr_image->row_pointers[y];
@@ -927,9 +985,9 @@ HDRToSDR(const std::unique_ptr<PNGImage> &hdr_image, double clip_low,
                 values[i] = (hdr_row[idx] << 8) | hdr_row[idx + 1];
             }
 
-            double r = (values[0] / 65535.0);
-            double g = (values[1] / 65535.0);
-            double b = (values[2] / 65535.0);
+            double r = (static_cast<double>(values[0]) / 65535.0);
+            double g = (static_cast<double>(values[1]) / 65535.0);
+            double b = (static_cast<double>(values[2]) / 65535.0);
 
             r = Rec2020HLGToLinear(r);
             g = Rec2020HLGToLinear(g);

@@ -4,6 +4,7 @@
 #include "../src/utils.h"
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
+#include "npy.hpp"
 
 TEST_CASE("Color Space Conversions", "[imageops]") {
     double base = 10.0;
@@ -17,34 +18,34 @@ TEST_CASE("Color Space Conversions", "[imageops]") {
             // Test HLG transfer function
             double hlg2l = imageops::Rec2020HLGToLinear(x);
             double l2hlg = imageops::LinearToRec2020HLG(hlg2l);
-            REQUIRE_THAT(l2hlg, Catch::Matchers::WithinRel(x, 1e-6));
+            REQUIRE_THAT(l2hlg, Catch::Matchers::WithinAbs(x, 1e-6));
             l2hlg = imageops::LinearToRec2020HLG(x);
             hlg2l = imageops::Rec2020HLGToLinear(l2hlg);
-            REQUIRE_THAT(hlg2l, Catch::Matchers::WithinRel(x, 1e-6));
+            REQUIRE_THAT(hlg2l, Catch::Matchers::WithinAbs(x, 1e-6));
 
             // Test sRGB transfer function
             double srgb2l = imageops::sRGBToLinear(x);
             double l2srgb = imageops::LinearTosRGB(srgb2l);
-            REQUIRE_THAT(l2srgb, Catch::Matchers::WithinRel(x, 1e-6));
+            REQUIRE_THAT(l2srgb, Catch::Matchers::WithinAbs(x, 1e-6));
             l2srgb = imageops::LinearTosRGB(x);
             srgb2l = imageops::sRGBToLinear(l2srgb);
-            REQUIRE_THAT(srgb2l, Catch::Matchers::WithinRel(x, 1e-6));
+            REQUIRE_THAT(srgb2l, Catch::Matchers::WithinAbs(x, 1e-6));
 
             // Test Rec2020 Gamma transfer function
             double gamma2l = imageops::Rec2020GammaToLinear(x);
             double l2gamma = imageops::LinearToRec2020Gamma(gamma2l);
-            REQUIRE_THAT(l2gamma, Catch::Matchers::WithinRel(x, 1e-6));
+            REQUIRE_THAT(l2gamma, Catch::Matchers::WithinAbs(x, 1e-6));
             l2gamma = imageops::LinearToRec2020Gamma(x);
             gamma2l = imageops::Rec2020GammaToLinear(l2gamma);
-            REQUIRE_THAT(gamma2l, Catch::Matchers::WithinRel(x, 1e-6));
+            REQUIRE_THAT(gamma2l, Catch::Matchers::WithinAbs(x, 1e-6));
 
             // Test P3 PQ transfer function
             double pq2l = imageops::P3PQToLinear(x);
             double l2pq = imageops::LinearToP3PQ(pq2l);
-            REQUIRE_THAT(l2pq, Catch::Matchers::WithinRel(x, 1e-6));
+            REQUIRE_THAT(l2pq, Catch::Matchers::WithinAbs(x, 1e-6));
             l2pq = imageops::LinearToP3PQ(x);
             pq2l = imageops::P3PQToLinear(l2pq);
-            REQUIRE_THAT(pq2l, Catch::Matchers::WithinRel(x, 1e-6));
+            REQUIRE_THAT(pq2l, Catch::Matchers::WithinAbs(x, 1e-6));
         }
     }
 
@@ -58,7 +59,7 @@ TEST_CASE("Color Space Conversions", "[imageops]") {
             std::vector<double> xyz = imageops::LinearRec2020ToXYZ(rgb);
             std::vector<double> rgb_back = imageops::XYZToLinearRec2020(xyz);
             for (size_t j = 0; j < 3; j++) {
-                REQUIRE_THAT(rgb_back[j], Catch::Matchers::WithinRel(rgb[j], 1e-6));
+                REQUIRE_THAT(rgb_back[j], Catch::Matchers::WithinAbs(rgb[j], 1e-6));
             }
 
             // REVISIT: for some reason this is way less precise that counterparts?
@@ -66,38 +67,61 @@ TEST_CASE("Color Space Conversions", "[imageops]") {
             xyz = imageops::LinearP3ToXYZ(rgb);
             rgb_back = imageops::XYZToLinearP3(xyz);
             for (size_t j = 0; j < 3; j++) {
-                REQUIRE_THAT(rgb_back[j], Catch::Matchers::WithinRel(rgb[j], 1e-3));
+                REQUIRE_THAT(rgb_back[j], Catch::Matchers::WithinAbs(rgb[j], 1e-3));
             }
 
             // Test sRGB<->XYZ
             xyz = imageops::LinearsRGBToXYZ(rgb);
             rgb_back = imageops::XYZToLinearsRGB(xyz);
             for (size_t j = 0; j < 3; j++) {
-                REQUIRE_THAT(rgb_back[j], Catch::Matchers::WithinRel(rgb[j], 1e-6));
+                REQUIRE_THAT(rgb_back[j], Catch::Matchers::WithinAbs(rgb[j], 1e-6));
+            }
+        }
+    }
+
+    // Test RGB<->XYZ conversions
+    SECTION("REC2020-RGB-XYZ Conversions") {
+        for (int i = 0; i < 10; i++) {
+            x = static_cast<double>(i + 1) / base;
+            std::vector<double> rgb = {x, x, x};
+
+            std::vector<double> xyz = imageops::LinearRec2020ToXYZ(rgb);
+            xyz = imageops::XYZToLinearsRGB(xyz);
+            xyz = imageops::LinearsRGBToXYZ(xyz);
+            std::vector<double> rgb_back = imageops::XYZToLinearRec2020(xyz);
+            for (size_t j = 0; j < 3; j++) {
+                REQUIRE_THAT(rgb_back[j], Catch::Matchers::WithinAbs(rgb[j], 1e-6));
             }
         }
     }
 
     // // Test XYZ->YUV conversions
-    // SECTION("XYZ-YUV Conversions") {
-    //     for (int i = 0; i < 10; i++) {
-    //         x = static_cast<double>(i + 1) / base;
-    //         std::vector<double> xyz = {x, x, x};
+    SECTION("XYZ-YUV Conversions") {
+        for (int i = 0; i < 10; i++) {
+            x = static_cast<double>(i + 1) / base;
+            std::vector<double> rgb = {x, x, x};
 
-    //         // Test XYZ->Rec2020 YUV
-    //         std::vector<double> yuv = imageops::XYZToRec2020YUV(xyz);
-    //         REQUIRE(yuv.size() == 3);
-    //         REQUIRE_THAT(yuv[0], Catch::Matchers::WithinRel(x, 1e-6)); // Y should be close to input for equal RGB
+            std::vector<double> xyz = imageops::LinearRec2020ToXYZ(rgb);
+            std::vector<double> yuv1 = imageops::XYZToRec2020YUV(xyz);
 
-    //         // Test XYZ->BT.709 YUV
-    //         yuv = imageops::XYZToBt709YUV(xyz);
-    //         REQUIRE(yuv.size() == 3);
-    //         REQUIRE_THAT(yuv[0], Catch::Matchers::WithinRel(x, 1e-6)); // Y should be close to input for equal RGB
-    //     }
-    // }
+            xyz = imageops::XYZToLinearsRGB(xyz);
+            xyz = imageops::LinearsRGBToXYZ(xyz);
+            std::vector<double> yuv2 = imageops::XYZToRec2020YUV(xyz);
+
+            for (size_t j = 0; j < 3; j++) {
+                // double diff = std::abs(yuv1[j] - yuv2[j]);
+                // double relDiff = diff / std::max(std::abs(yuv1[j]), std::abs(yuv2[j]));
+                REQUIRE_THAT(yuv1[j], Catch::Matchers::WithinAbs(yuv2[j], 1e-6));
+            }
+        }
+    }
+    std::vector<double> yuv = imageops::XYZToBt709YUV({0.1, 0.1, 0.1});
+    std::cout << "BT709 " << yuv[0] << "," << yuv[1] << "," << yuv[2] << std::endl;
+    yuv = imageops::XYZToRec2020YUV({0.1, 0.1, 0.1});
+    std::cout << "REC2020 " << yuv[0] << "," << yuv[1] << "," << yuv[2] << std::endl;
 }
 
-TEST_CASE("PNG", "[imageops]") {
+TEST_CASE("PNG", "[hdrtosdr]") {
     utils::Error error;
 
     std::unique_ptr<imageops::PNGImage> image =

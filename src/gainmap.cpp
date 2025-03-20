@@ -1,4 +1,5 @@
 #include "gainmap.hpp"
+#include "npy.hpp"
 #include "utils.h"
 #include <iostream>
 
@@ -34,9 +35,11 @@ ComputeGainMap(std::vector<double> hdr_yuv, std::vector<double> sdr_yuv,
             double log_recovery = (std::log2(pixel_gain) - map_min_log2) /
                                   (map_max_log2 - map_min_log2);
             log_recovery = CLIP(log_recovery, 0.0, 1.0);
-            double recovery = std::max(std::pow(log_recovery, map_gamma), 0.0) * 10.0;
+            double recovery =
+                std::max(std::pow(log_recovery, map_gamma), 0.0) * 10.0;
 
-            uint8_t quantized_recovery = static_cast<uint8_t>(CLIP(recovery * 255.0, 0.0, 255.0));
+            uint8_t quantized_recovery =
+                static_cast<uint8_t>(CLIP(recovery * 255.0, 0.0, 255.0));
             gainmap_row[x * 3] = quantized_recovery;
             gainmap_row[x * 3 + 1] = quantized_recovery;
             gainmap_row[x * 3 + 2] = quantized_recovery;
@@ -56,7 +59,7 @@ HDRToGainMap(const std::unique_ptr<imageops::PNGImage> &hdr_image,
     }
 
     // Create SDR version using HDRToSDR
-    auto sdr_image =
+    std::unique_ptr<imageops::PNGImage> sdr_image =
         HDRToSDR(hdr_image, 0.0, 1.0, error, imageops::ToneMapping::BASE);
     if (!sdr_image) {
         error = {true, "Failed to create SDR image"};
@@ -108,6 +111,16 @@ HDRToGainMap(const std::unique_ptr<imageops::PNGImage> &hdr_image,
                 imageops::LinearsRGBToXYZ({rgb[0], rgb[1], rgb[2]}));
             sdr_yuv.insert(sdr_yuv.end(), yuv.begin(), yuv.end());
         }
+    }
+
+    // Save YUV arrays as NPY files
+    {
+        const size_t shape[] = {height, width, 3};
+        bool fortran_order = false;
+        npy::SaveArrayAsNumpy("./images/hdr_yuv.npy", fortran_order, 3, shape,
+                              hdr_yuv);
+        npy::SaveArrayAsNumpy("./images/sdr_yuv.npy", fortran_order, 3, shape,
+                              sdr_yuv);
     }
 
     // Create gainmap using gainmap::compute_gain_map
