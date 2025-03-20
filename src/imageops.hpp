@@ -110,19 +110,34 @@ bool WriteToPNG(const std::unique_ptr<PNGImage> &image,
 // 5. sRGB TONEMAP/TRANSFER ->
 // 6. QUANT
 #define CLIP(x, min, max) ((x) < (min)) ? (min) : ((x) > (max)) ? (max) : (x)
-double LinearToRec2020HLG(double x);
+
 double Rec2020HLGToLinear(double x);
-double LinearToRec2020Gamma(double x);
 double Rec2020GammaToLinear(double x);
-double LinearToP3PQ(double x);
 double P3PQToLinear(double x);
-double LinearTosRGB(double x);
 double sRGBToLinear(double x);
-double LinearsHLGToYUV(double x);
-double LinearsRGBToYUV(double x);
+
+double LinearToRec2020HLG(double x);
+double LinearToRec2020Gamma(double x);
+double LinearToP3PQ(double x);
+double LinearTosRGB(double x);
+
+std::vector<double> LinearRec2020ToXYZ(const std::vector<double> &rgb);
+std::vector<double> LinearP3ToXYZ(const std::vector<double> &rgb);
+std::vector<double> LinearsRGBToXYZ(const std::vector<double> &rgb);
+
+std::vector<double> XYZToLinearRec2020(const std::vector<double> &xyz);
+std::vector<double> XYZToLinearP3(const std::vector<double> &xyz);
+std::vector<double> XYZToLinearsRGB(const std::vector<double> &xyz);
+std::vector<double> XYZToRec2020HLG(const std::vector<double> &xyz);
+std::vector<double> XYZToRec2020Gamma(const std::vector<double> &xyz);
+std::vector<double> XYZToP3PQ(const std::vector<double> &xyz);
+std::vector<double> XYZTosRGB(const std::vector<double> &xyz);
+std::vector<double> XYZToRec2020YUV(const std::vector<double> &xyz);
+std::vector<double> XYZToBt709YUV(const std::vector<double> &xyz);
 
 double ApplyToneMapping(double x, ToneMapping mode, double target_nits,
                         double max_nits);
+// DEPRECATE:
 void LinearRec2020ToLinearsRGB(double &r, double &g, double &b);
 
 std::unique_ptr<PNGImage> HDRToRAW(const std::unique_ptr<PNGImage> &hdr_image,

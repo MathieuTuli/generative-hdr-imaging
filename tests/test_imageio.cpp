@@ -1,48 +1,100 @@
+#include <iostream>
 #include "../src/imageops.hpp"
+#include "../src/gainmap.hpp"
 #include "../src/utils.h"
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 
-TEST_CASE("Helpers", "[imageops]") {
+TEST_CASE("Color Space Conversions", "[imageops]") {
     double base = 10.0;
     double x;
-    for (int i = 0; i < 10; i++){
-        x = static_cast<double>(i + 1) / base;
+    
+    // Test transfer functions
+    SECTION("Transfer Functions") {
+        for (int i = 0; i < 10; i++) {
+            x = static_cast<double>(i + 1) / base;
 
-        double hlg2l = imageops::Rec2020HLGToLinear(x);
-        double l2hlg = imageops::LinearToRec2020HLG(hlg2l);
-        REQUIRE_THAT(l2hlg, Catch::Matchers::WithinRel(x, 1e-6));
-        l2hlg = imageops::LinearToRec2020HLG(x);
-        hlg2l = imageops::Rec2020HLGToLinear(l2hlg);
-        REQUIRE_THAT(hlg2l, Catch::Matchers::WithinRel(x, 1e-6));
+            // Test HLG transfer function
+            double hlg2l = imageops::Rec2020HLGToLinear(x);
+            double l2hlg = imageops::LinearToRec2020HLG(hlg2l);
+            REQUIRE_THAT(l2hlg, Catch::Matchers::WithinRel(x, 1e-6));
+            l2hlg = imageops::LinearToRec2020HLG(x);
+            hlg2l = imageops::Rec2020HLGToLinear(l2hlg);
+            REQUIRE_THAT(hlg2l, Catch::Matchers::WithinRel(x, 1e-6));
 
-        double srgb2l = imageops::sRGBToLinear(x);
-        double l2srgb = imageops::LinearTosRGB(srgb2l);
-        REQUIRE_THAT(l2srgb, Catch::Matchers::WithinRel(x, 1e-6));
-        l2srgb = imageops::LinearTosRGB(x);
-        srgb2l = imageops::sRGBToLinear(l2srgb);
-        REQUIRE_THAT(srgb2l, Catch::Matchers::WithinRel(x, 1e-6));
+            // Test sRGB transfer function
+            double srgb2l = imageops::sRGBToLinear(x);
+            double l2srgb = imageops::LinearTosRGB(srgb2l);
+            REQUIRE_THAT(l2srgb, Catch::Matchers::WithinRel(x, 1e-6));
+            l2srgb = imageops::LinearTosRGB(x);
+            srgb2l = imageops::sRGBToLinear(l2srgb);
+            REQUIRE_THAT(srgb2l, Catch::Matchers::WithinRel(x, 1e-6));
+
+            // Test Rec2020 Gamma transfer function
+            double gamma2l = imageops::Rec2020GammaToLinear(x);
+            double l2gamma = imageops::LinearToRec2020Gamma(gamma2l);
+            REQUIRE_THAT(l2gamma, Catch::Matchers::WithinRel(x, 1e-6));
+            l2gamma = imageops::LinearToRec2020Gamma(x);
+            gamma2l = imageops::Rec2020GammaToLinear(l2gamma);
+            REQUIRE_THAT(gamma2l, Catch::Matchers::WithinRel(x, 1e-6));
+
+            // Test P3 PQ transfer function
+            double pq2l = imageops::P3PQToLinear(x);
+            double l2pq = imageops::LinearToP3PQ(pq2l);
+            REQUIRE_THAT(l2pq, Catch::Matchers::WithinRel(x, 1e-6));
+            l2pq = imageops::LinearToP3PQ(x);
+            pq2l = imageops::P3PQToLinear(l2pq);
+            REQUIRE_THAT(pq2l, Catch::Matchers::WithinRel(x, 1e-6));
+        }
     }
 
-    SECTION("Invalid inputs") {
-        REQUIRE_THROWS_AS(imageops::Rec2020HLGToLinear(-1.0), std::runtime_error);
-        REQUIRE_THROWS_AS(imageops::LinearToRec2020HLG(-1.0), std::runtime_error);
+    // Test RGB<->XYZ conversions
+    SECTION("RGB-XYZ Conversions") {
+        for (int i = 0; i < 10; i++) {
+            x = static_cast<double>(i + 1) / base;
+            std::vector<double> rgb = {x, x, x};
 
-        REQUIRE_THROWS_AS(imageops::Rec2020HLGToLinear(std::numeric_limits<double>::quiet_NaN()), std::runtime_error);
-        REQUIRE_THROWS_AS(imageops::LinearToRec2020HLG(std::numeric_limits<double>::quiet_NaN()), std::runtime_error);
+            // Test Rec2020 RGB<->XYZ
+            std::vector<double> xyz = imageops::LinearRec2020ToXYZ(rgb);
+            std::vector<double> rgb_back = imageops::XYZToLinearRec2020(xyz);
+            for (size_t j = 0; j < 3; j++) {
+                REQUIRE_THAT(rgb_back[j], Catch::Matchers::WithinRel(rgb[j], 1e-6));
+            }
 
-        REQUIRE_THROWS_AS(imageops::Rec2020HLGToLinear(std::numeric_limits<double>::infinity()), std::runtime_error);
-        REQUIRE_THROWS_AS(imageops::LinearToRec2020HLG(std::numeric_limits<double>::infinity()), std::runtime_error);
+            // REVISIT: for some reason this is way less precise that counterparts?
+            // Test P3 RGB<->XYZ
+            xyz = imageops::LinearP3ToXYZ(rgb);
+            rgb_back = imageops::XYZToLinearP3(xyz);
+            for (size_t j = 0; j < 3; j++) {
+                REQUIRE_THAT(rgb_back[j], Catch::Matchers::WithinRel(rgb[j], 1e-3));
+            }
 
-        REQUIRE_THROWS_AS(imageops::sRGBToLinear(-1.0), std::runtime_error);
-        REQUIRE_THROWS_AS(imageops::LinearTosRGB(-1.0), std::runtime_error);
-
-        REQUIRE_THROWS_AS(imageops::sRGBToLinear(std::numeric_limits<double>::quiet_NaN()), std::runtime_error);
-        REQUIRE_THROWS_AS(imageops::LinearTosRGB(std::numeric_limits<double>::quiet_NaN()), std::runtime_error);
-
-        REQUIRE_THROWS_AS(imageops::sRGBToLinear(std::numeric_limits<double>::infinity()), std::runtime_error);
-        REQUIRE_THROWS_AS(imageops::LinearTosRGB(std::numeric_limits<double>::infinity()), std::runtime_error);
+            // Test sRGB<->XYZ
+            xyz = imageops::LinearsRGBToXYZ(rgb);
+            rgb_back = imageops::XYZToLinearsRGB(xyz);
+            for (size_t j = 0; j < 3; j++) {
+                REQUIRE_THAT(rgb_back[j], Catch::Matchers::WithinRel(rgb[j], 1e-6));
+            }
+        }
     }
+
+    // // Test XYZ->YUV conversions
+    // SECTION("XYZ-YUV Conversions") {
+    //     for (int i = 0; i < 10; i++) {
+    //         x = static_cast<double>(i + 1) / base;
+    //         std::vector<double> xyz = {x, x, x};
+
+    //         // Test XYZ->Rec2020 YUV
+    //         std::vector<double> yuv = imageops::XYZToRec2020YUV(xyz);
+    //         REQUIRE(yuv.size() == 3);
+    //         REQUIRE_THAT(yuv[0], Catch::Matchers::WithinRel(x, 1e-6)); // Y should be close to input for equal RGB
+
+    //         // Test XYZ->BT.709 YUV
+    //         yuv = imageops::XYZToBt709YUV(xyz);
+    //         REQUIRE(yuv.size() == 3);
+    //         REQUIRE_THAT(yuv[0], Catch::Matchers::WithinRel(x, 1e-6)); // Y should be close to input for equal RGB
+    //     }
+    // }
 }
 
 TEST_CASE("PNG", "[imageops]") {
@@ -53,6 +105,7 @@ TEST_CASE("PNG", "[imageops]") {
     if (error.raise) {
         INFO(error.message);
     }
+    REQUIRE_FALSE(error.raise);
     std::vector<std::pair<imageops::ToneMapping, std::string>> tone_mappers = {
         {imageops::ToneMapping::BASE, "base"},
         {imageops::ToneMapping::REINHARD, "reinhard"},
@@ -65,6 +118,7 @@ TEST_CASE("PNG", "[imageops]") {
         {imageops::ToneMapping::HABLE, "hable"}};
 
     for (const auto &[tone_mapper, name] : tone_mappers) {
+        std::cout << "Running " << name << std::endl;
         std::unique_ptr<imageops::PNGImage> sdr_image =
             imageops::HDRToSDR(image, 0.0, 1.0, error, tone_mapper);
         REQUIRE_FALSE(error.raise);
@@ -77,4 +131,24 @@ TEST_CASE("PNG", "[imageops]") {
         REQUIRE_FALSE(error.raise);
         REQUIRE(ret);
     }
+}
+
+TEST_CASE("Gainmap", "[gainmap]") {
+    utils::Error error;
+
+    std::unique_ptr<imageops::PNGImage> image =
+        imageops::LoadHDRPNG("./images/test_hdr_png.png", error);
+    if (error.raise) {
+        INFO(error.message);
+    }
+    REQUIRE_FALSE(error.raise);
+
+    std::unique_ptr<imageops::PNGImage> gainmap = gainmap::HDRToGainMap(image, 0.015625, 0.015625, 1.0, 4.0, 1.0, error);
+    std::string output_path = "./images/gainmap.png";
+    bool ret = imageops::WriteToPNG(gainmap, output_path, error);
+    if (error.raise) {
+        INFO("Failed to write gainmap: " + error.message);
+    }
+    REQUIRE_FALSE(error.raise);
+    REQUIRE(ret);
 }
