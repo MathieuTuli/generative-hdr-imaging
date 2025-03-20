@@ -34,47 +34,12 @@ struct PNGImage {
 };
 
 struct ImageMetadata {
-    float gamma{2.2f}; // Gamma value from gAMA chunk
-    float white_point[2]{0.3127f,
-                         0.3290f}; // CIE xy chromaticity from cHRM chunk
-    float primaries[6]{
-        // RGB primaries from cHRM chunk
-        0.64f, 0.33f, // Red x,y
-        0.30f, 0.60f, // Green x,y
-        0.15f, 0.06f  // Blue x,y
-    };
-    float luminance{1.0f};                // From sRGB or iCCP chunk if present
-    std::string color_space{"sRGB"};      // From sRGB or iCCP chunk
-    std::string transfer_function{"HLG"}; // From sRGB or iCCP chunk
-    bool has_transparency{false};         // From tRNS chunk
-    std::string rendering_intent{"perceptual"}; // From sRGB chunk
 };
 
 enum class HDRFormat {
     UNKNOWN = -1,
     HDRPNG = 0,
     AVIF = 1,
-};
-
-struct HDRProcessingParams {
-    float exposure{0.0f};
-    float saturation{1.0f};
-    float contrast{1.0f};
-    float gamma{2.2f};
-    bool force_conversion{false};
-};
-
-struct SDRConversionParams {
-    double max_nits{1000.0f};
-    double target_nits{1000.0f};
-    double gamma{2.2f};
-    double exposure{1.0f};
-    bool auto_clip{true};
-    double clip_low{0.0f};
-    double clip_high;
-    bool preserve_highlights{true};
-    double knee_point{0.75f};
-    ToneMapping tone_mapping{ToneMapping::GAMMA};
 };
 
 // ----------------------------------------

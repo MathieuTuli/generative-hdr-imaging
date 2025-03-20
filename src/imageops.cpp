@@ -131,6 +131,35 @@ std::unique_ptr<PNGImage> LoadHDRPNG(const std::string &filename,
     }
     png_read_image(png, image->row_pointers);
 
+    uint16_t min_val = UINT16_MAX;
+    uint16_t max_val = 0;
+    double sum = 0.0;
+    const size_t channels = 3;
+    const size_t total_pixels = image->width * image->height * channels;
+
+    for (size_t y = 0; y < image->height; y++) {
+        png_bytep row = image->row_pointers[y];
+        for (size_t x = 0; x < image->width; x++) {
+            for (size_t c = 0; c < channels; c++) {
+                size_t idx = x * channels * 2 + c * 2; // *2 because 16-bit
+                uint16_t value = (row[idx] << 8) | row[idx + 1]; // big-endian
+                min_val = std::min(min_val, value);
+                max_val = std::max(max_val, value);
+                sum += value;
+            }
+        }
+    }
+
+    double mean = sum / total_pixels;
+
+    std::cout << "Image value range:" << std::endl;
+    std::cout << "  Min: " << min_val << " (" << (min_val / 65535.0) << ")"
+              << std::endl;
+    std::cout << "  Max: " << max_val << " (" << (max_val / 65535.0) << ")"
+              << std::endl;
+    std::cout << "  Mean: " << mean << " (" << (mean / 65535.0) << ")"
+              << std::endl;
+
     png_destroy_read_struct(&png, &info, nullptr);
     fclose(fp);
 
@@ -428,7 +457,6 @@ double P3PQToLinear(double x) {
     const double c1 = 3424.0 / 4096.0;
     const double c2 = 32.0 * 2413.0 / 4096.0;
     const double c3 = 32.0 * 2392.0 / 4096.0;
-
 
     double xpow = std::pow(x, 1.0 / m2);
     double num = std::max(xpow - c1, 0.0);
