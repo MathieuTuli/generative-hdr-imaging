@@ -1,20 +1,21 @@
 #include "gainmap.hpp"
 #include "npy.hpp"
 #include "utils.h"
+#include <cmath>
 #include <iostream>
 
 namespace gainmap {
-std::unique_ptr<imageops::PNGImage>
+std::unique_ptr<imageops::Image>
 ComputeGainMap(std::vector<double> hdr_yuv, std::vector<double> sdr_yuv,
                int width, int height, double offset_hdr, double offset_sdr,
                double min_content_boost, double max_content_boost,
                double map_gamma, utils::Error error) {
 
-    std::unique_ptr<imageops::PNGImage> gainmap =
-        std::make_unique<imageops::PNGImage>();
+    std::unique_ptr<imageops::Image> gainmap =
+        std::make_unique<imageops::Image>();
     gainmap->width = width;
     gainmap->height = height;
-    gainmap->color_type = PNG_COLOR_TYPE_GRAY;
+    // gainmap->color_type = Image;
     gainmap->bit_depth = 8;
     gainmap->bytes_per_row = width * 3;
 
@@ -49,20 +50,29 @@ ComputeGainMap(std::vector<double> hdr_yuv, std::vector<double> sdr_yuv,
     return gainmap;
 }
 
-std::unique_ptr<imageops::PNGImage>
-HDRToGainMap(const std::unique_ptr<imageops::PNGImage> &hdr_image,
+// The pipeline is as follows:
+// HDR -> linear (inv OETF)
+// -> Rec2020 [save]
+// linear -> gamma (Bt100 HLG OETF)
+// gamma -> YUV [save]
+
+// Rec2020 (linear) -> Bt709
+// -> gammut map (clip)
+// -> 99% clip
+// -> sRGB OETF
+// -> ToneMap
+// -> Quantize [save]
+// -> Inv ToneMap
+// sRGB -> linear (inv sRGB OETF)
+// -> Rec2020
+// linear -> gamma (Bt100 HLG OETF)
+// gamma -> YUV [save]
+std::unique_ptr<imageops::Image>
+HDRToGainMap(const std::unique_ptr<imageops::Image> &hdr_image,
              double offset_hdr, double offset_sdr, double min_content_boost,
              double max_content_boost, double map_gamma, utils::Error &error) {
     if (!hdr_image || !hdr_image->row_pointers) {
         error = {true, "Invalid input HDR image"};
-        return nullptr;
-    }
-
-    // Create SDR version using HDRToSDR
-    std::unique_ptr<imageops::PNGImage> sdr_image =
-        HDRToSDR(hdr_image, 0.0, 1.0, error, imageops::ToneMapping::BASE);
-    if (!sdr_image) {
-        error = {true, "Failed to create SDR image"};
         return nullptr;
     }
 

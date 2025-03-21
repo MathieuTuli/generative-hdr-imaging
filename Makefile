@@ -87,6 +87,10 @@ SRCS += $(IMGUI_DIR)/backends/imgui_impl_glfw.cpp $(IMGUI_DIR)/backends/imgui_im
 SRCS += $(IMGUI_DIR)/imgui.cpp $(IMGUI_DIR)/imgui_demo.cpp $(IMGUI_DIR)/imgui_draw.cpp $(IMGUI_DIR)/imgui_tables.cpp $(IMGUI_DIR)/imgui_widgets.cpp
 CXXFLAGS += -I$(IMGUI_DIR) -I$(IMGUI_DIR)/backends
 
+EXIF_DIR := $(DEPS_DIR)/exiftool
+SRCS += $(shell find $(EXIF_DIR)/src -name '*.cpp' -or -name '*.c')
+CXXFLAGS += -I$(EXIF_DIR)/inc
+
 # -- build rules
 # Prepends BUILD_DIR and appends .o to every src file
 OBJS := $(SRCS:%=$(BUILD_DIR)/%.o)
@@ -112,6 +116,9 @@ $(BUILD_DIR)/%.cpp.o: %.cpp
 	$(CXX) $(CXXFLAGS) -c -o $@ $< 
 
 all: $(BUILD_DIR)/$(EXE)
+	@echo "OBJS: $(OBJS)"
+	@echo "CXXFLAGS: $(CXXFLAGS)"
+	@echo All build complete for $(UNAME_S)
 
 $(BUILD_DIR)/$(TEST_EXE): $(TEST_OBJS)
 	$(CXX) -o $@ $^ $(CXXFLAGS) $(LIBS)

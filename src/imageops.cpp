@@ -1,11 +1,11 @@
 #include "imageops.hpp"
 #include "npy.hpp"
 #include "utils.h"
+#include <ExifTool.h>
 #include <algorithm>
 #include <cassert>
 #include <cmath>
 #include <filesystem>
-#include <functional>
 #include <iostream>
 #include <memory>
 #include <png.h>
@@ -46,8 +46,8 @@ HDRFormat DetectFormat(const std::string &filename) {
 // ----------------------------------------
 // INVOLVED IO
 // ----------------------------------------
-std::unique_ptr<PNGImage> LoadImage(const std::string &filename,
-                                    utils::Error &error) {
+std::unique_ptr<Image> LoadImage(const std::string &filename,
+                                 utils::Error &error) {
     // First validate the file exists and is readable
     if (!ValidateHeader(filename, error)) {
         return nullptr;
@@ -74,8 +74,8 @@ void LoadAVIF(const std::string &filename, utils::Error &error) {
     error = {true, "AVIF loading not implemented"};
 }
 
-std::unique_ptr<PNGImage> LoadHDRPNG(const std::string &filename,
-                                     utils::Error &error) {
+std::unique_ptr<Image> LoadHDRPNG(const std::string &filename,
+                                  utils::Error &error) {
     FILE *fp = fopen(filename.c_str(), "rb");
     if (!fp) {
         error = {true, "Failed to open file: " + filename};
@@ -114,15 +114,19 @@ std::unique_ptr<PNGImage> LoadHDRPNG(const std::string &filename,
         return nullptr;
     }
 
-    std::unique_ptr<PNGImage> image = std::make_unique<PNGImage>();
+    std::unique_ptr<Image> image = std::make_unique<Image>();
 
     image->width = png_get_image_width(png, info);
     image->height = png_get_image_height(png, info);
-    image->color_type = png_get_color_type(png, info);
+    // REVISIT:
+    // image->color_type = png_get_color_type(png, info);
     image->bit_depth = png_get_bit_depth(png, info);
     image->bytes_per_row = png_get_rowbytes(png, info);
 
     png_read_update_info(png, info);
+    image->metadata = ReadMetadata(filename, error);
+    if (error.raise)
+        return nullptr;
 
     image->row_pointers =
         (png_bytep *)malloc(sizeof(png_bytep) * image->height);
@@ -167,138 +171,66 @@ std::unique_ptr<PNGImage> LoadHDRPNG(const std::string &filename,
     return image;
 }
 
-ImageMetadata ReadMetadata(const std::string &filename, HDRFormat format,
-                           utils::Error &error) {
-    switch (format) {
-    case HDRFormat::AVIF:
-        return ReadAVIFMetadata(filename, error);
-    case HDRFormat::HDRPNG:
-        return ReadHDRPNGMetadata(filename, error);
-    default:
-        error = {true, "Unsupported format for metadata"};
-        return ImageMetadata{};
-    }
-}
-
-ImageMetadata ReadAVIFMetadata(const std::string &filename,
-                               utils::Error &error) {
-    // TODO: Implement AVIF metadata reading
-    error = {true, "AVIF metadata reading not implemented"};
-    return ImageMetadata{};
-}
-
-ImageMetadata ReadHDRPNGMetadata(const std::string &filename,
+ImageMetadata ReadMetadata(const std::string &filename,
                                  utils::Error &error) {
     ImageMetadata metadata;
-    /*
-    // Set default values for P3 HLG
-    metadata.color_space = "Display P3";
-    metadata.transfer_function = "HLG";
-    metadata.gamma = 1.0f;        // HLG has its own EOTF
-    metadata.luminance = 1000.0f; // Typical HLG peak luminance
-    // P3 chromaticity coordinates
-    metadata.primaries[0] = 0.680f;    // P3 Red x
-    metadata.primaries[1] = 0.320f;    // P3 Red y
-    metadata.primaries[2] = 0.265f;    // P3 Green x
-    metadata.primaries[3] = 0.690f;    // P3 Green y
-    metadata.primaries[4] = 0.150f;    // P3 Blue x
-    metadata.primaries[5] = 0.060f;    // P3 Blue y
-    metadata.white_point[0] = 0.3127f; // D65 x
-    metadata.white_point[1] = 0.3290f; // D65 y
-    FILE *fp = fopen(filename.c_str(), "rb");
-    if (!fp) {
-        error = {true, "Failed to open file: " + filename};
+    std::unique_ptr<ExifTool> et(new ExifTool());
+    
+    if (!et) {
+        error = {true, "Failed to create ExifTool instance"};
         return metadata;
     }
 
-    png_structp png = png_create_read_struct(PNG_LIBPNG_VER_STRING, nullptr,
-                                             nullptr, nullptr);
-    if (!png) {
-        fclose(fp);
-        error = {true, "Failed to create PNG read struct"};
+    TagInfo *info = et->ImageInfo(filename.c_str());
+    
+    char *err = et->GetError();
+    if (err) {
+        error = {true, std::string("ExifTool error: ") + err};
         return metadata;
     }
 
-    png_infop info = png_create_info_struct(png);
     if (!info) {
-        png_destroy_read_struct(&png, nullptr, nullptr);
-        fclose(fp);
-        error = {true, "Failed to create PNG info struct"};
-        return metadata;
-    }
-
-    if (setjmp(png_jmpbuf(png))) {
-        png_destroy_read_struct(&png, &info, nullptr);
-        fclose(fp);
-        error = {true, "Error during PNG read"};
-        return metadata;
-    }
-
-    png_init_io(png, fp);
-    png_read_info(png, info);
-
-    // Read gamma
-    double file_gamma;
-    if (png_get_gAMA(png, info, &file_gamma)) {
-        metadata.gamma = static_cast<float>(file_gamma);
-    }
-
-    // Read chromaticity
-    double wx, wy, rx, ry, gx, gy, bx, by;
-    if (png_get_cHRM(png, info, &wx, &wy, &rx, &ry, &gx, &gy, &bx, &by)) {
-        metadata.white_point[0] = static_cast<float>(wx);
-        metadata.white_point[1] = static_cast<float>(wy);
-        metadata.primaries[0] = static_cast<float>(rx);
-        metadata.primaries[1] = static_cast<float>(ry);
-        metadata.primaries[2] = static_cast<float>(gx);
-        metadata.primaries[3] = static_cast<float>(gy);
-        metadata.primaries[4] = static_cast<float>(bx);
-        metadata.primaries[5] = static_cast<float>(by);
-    }
-
-    // Check for sRGB chunk
-    int srgb_intent;
-    if (png_get_sRGB(png, info, &srgb_intent)) {
-        metadata.color_space = "sRGB";
-        switch (srgb_intent) {
-        case PNG_sRGB_INTENT_PERCEPTUAL:
-            metadata.rendering_intent = "perceptual";
-            break;
-        case PNG_sRGB_INTENT_RELATIVE:
-            metadata.rendering_intent = "relative-colorimetric";
-            break;
-        case PNG_sRGB_INTENT_SATURATION:
-            metadata.rendering_intent = "saturation";
-            break;
-        case PNG_sRGB_INTENT_ABSOLUTE:
-            metadata.rendering_intent = "absolute-colorimetric";
-            break;
+        if (et->LastComplete() <= 0) {
+            error = {true, "Error executing exiftool!"};
+            return metadata;
         }
+    } else {
+        for (TagInfo *i = info; i; i = i->next) {
+            std::string name(i->name);
+            std::string value(i->value);
+            
+            if (name == "TransferCharacteristics") {
+                if (value.find("HLG") != std::string::npos) {
+                    metadata.oetf = colorspace::OETF::HLG;
+                } else if (value.find("PQ") != std::string::npos || value.find("2084") != std::string::npos) {
+                    metadata.oetf = colorspace::OETF::PQ;
+                } else if (value.find("2020") != std::string::npos) {
+                    metadata.oetf = colorspace::OETF::HLG;
+                } else if (value.find("709") != std::string::npos) {
+                    metadata.oetf = colorspace::OETF::SRGB;
+                } else {
+                    error = {true, "Unknown transfer function: " + value};
+                }
+            }
+            else if (name == "ColorPrimaries") {
+                if (value.find("2100") != std::string::npos || value.find("2020") != std::string::npos) {
+                    metadata.color_space = colorspace::ColorSpace::BT2100;
+                } else if (value.find("P3") != std::string::npos || value.find("SMPTE") != std::string::npos) {
+                    metadata.color_space = colorspace::ColorSpace::BT709;
+                } else if (value.find("709") != std::string::npos || value.find("sRGB") != std::string::npos) {
+                    metadata.color_space = colorspace::ColorSpace::BT709;
+                } else {
+                    error = {true, "Unknown color space: " + value};
+                }
+            }
+            std::cout << i->name << " = " << i->value << std::endl;
+        }
+        delete info;
     }
-
-    // Check for ICC profile
-    png_charp name;
-    png_bytep profile;
-    png_uint_32 proflen;
-    int compression_type;
-    if (png_get_iCCP(png, info, &name, &compression_type, &profile, &proflen)) {
-        metadata.color_space = std::string(name);
-    }
-
-    // Check for transparency
-    png_bytep trans_alpha;
-    int num_trans;
-    png_color_16p trans_color;
-    metadata.has_transparency =
-        png_get_tRNS(png, info, &trans_alpha, &num_trans, &trans_color) != 0;
-
-    png_destroy_read_struct(&png, &info, nullptr);
-    fclose(fp);
-    */
     return metadata;
 }
 
-bool WriteToPNG(const std::unique_ptr<PNGImage> &image,
+bool WriteToPNG(const std::unique_ptr<Image> &image,
                 const std::string &filename, utils::Error &error) {
     if (!image) {
         error = {true, "Invalid image pointer"};

@@ -3,10 +3,10 @@
 #include <cmath>
 
 namespace colorspace {
+// NOTE: some helpful tips
+// Color e: linear space
+// Color e_gamma: non-linear, gamma-encoded space
 
-// ----------------------------------------
-// CONSTANTS
-// ----------------------------------------
 // NOTE: sRGB transformations
 
 // See IEC 61966-2-1/Amd 1:2003, Equation F.7.
@@ -55,7 +55,7 @@ Color sRGB_InvOETF(Color e_gamma) {
               sRGB_InvOETF(e_gamma.b)}}};
 }
 
-double sRGB_InvOETFLUT(double e_gamma) {
+double sRGB_InvOETFLUT(double e_gamma){
     int32_t value =
         static_cast<int32_t>(e_gamma * (SRGB_INV_OETF_NUMENTRIES - 1) + 0.5);
     // TODO() : Remove once conversion modules have appropriate clamping in
@@ -317,183 +317,125 @@ Color PQ_InvOETFLUT(Color e_gamma) {
               PQ_InvOETFLUT(e_gamma.b)}}};
 }
 
-// ----------------------------------------
-// CONVERSION
-// ----------------------------------------
-// Display P3 also uses sRGB
+////////////////////////////////////////////////////////////////////////////////
+// Color space conversions
+// Sample, See,
+// https://registry.khronos.org/DataFormat/specs/1.3/dataformat.1.3.html#_bt_709_bt_2020_primary_conversion_example
 
-// Apply a color transformation matrix to a vector of RGB values
-std::vector<double> ApplyColorMatrix(const std::vector<double> &rgb,
-                                     const std::array<double, 9> &matrix) {
-    std::vector<double> result(3, 0.0);
-
-    // Matrix multiplication: result = matrix * rgb
-    result[0] = matrix[0] * rgb[0] + matrix[1] * rgb[1] + matrix[2] * rgb[2];
-    result[1] = matrix[3] * rgb[0] + matrix[4] * rgb[1] + matrix[5] * rgb[2];
-    result[2] = matrix[6] * rgb[0] + matrix[7] * rgb[1] + matrix[8] * rgb[2];
-
-    return result;
+const std::array<float, 9> BT709_TO_P3 = {0.822462f, 0.177537f, 0.000001f,
+                                          0.033194f, 0.966807f, -0.000001f,
+                                          0.017083f, 0.072398f, 0.91052f};
+const std::array<float, 9> BT709_TO_BT2100 = {0.627404f, 0.329282f, 0.043314f,
+                                              0.069097f, 0.919541f, 0.011362f,
+                                              0.016392f, 0.088013f, 0.895595f};
+const std::array<float, 9> P3_TO_BT709 = {1.22494f,   -0.22494f,  0.0f,
+                                          -0.042057f, 1.042057f,  0.0f,
+                                          -0.019638f, -0.078636f, 1.098274f};
+const std::array<float, 9> P3_TO_BT2100 = {0.753833f, 0.198597f, 0.04757f,
+                                           0.045744f, 0.941777f, 0.012479f,
+                                           -0.00121f, 0.017601f, 0.983608f};
+const std::array<float, 9> BT2100_TO_BT709 = {
+    1.660491f,  -0.587641f, -0.07285f,  -0.124551f, 1.1329f,
+    -0.008349f, -0.018151f, -0.100579f, 1.11873f};
+const std::array<float, 9> BT2100_TO_P3 = {1.343578f,  -0.282179f, -0.061399f,
+                                           -0.065298f, 1.075788f,  -0.01049f,
+                                           0.002822f,  -0.019598f, 1.016777f};
+Color ConvertGamut(Color e, const std::array<float, 9> &coeffs) {
+    return {{{coeffs[0] * e.r + coeffs[1] * e.g + coeffs[2] * e.b,
+              coeffs[3] * e.r + coeffs[4] * e.g + coeffs[5] * e.b,
+              coeffs[6] * e.r + coeffs[7] * e.g + coeffs[8] * e.b}}};
 }
+Color Bt709ToP3(Color e) { return ConvertGamut(e, BT709_TO_P3); }
+Color Bt709ToBt2100(Color e) { return ConvertGamut(e, BT709_TO_BT2100); }
+Color P3ToBt709(Color e) { return ConvertGamut(e, P3_TO_BT709); }
+Color P3ToBt2100(Color e) { return ConvertGamut(e, P3_TO_BT2100); }
+Color Bt2100ToBt709(Color e) { return ConvertGamut(e, BT2100_TO_BT709); }
+Color Bt2100ToP3(Color e) { return ConvertGamut(e, BT2100_TO_P3); }
 
-double Rec2020HLGToLinear(double x) {
-    /* Follows ITU-R BT.2100-2 */
-    const double a = 0.17883277;
-    const double b = 1.0 - 4.0 * a;               // 0.28466892;
-    const double c = 0.5 - a * std::log(4.0 * a); // 0.55991073;
+// All of these conversions are derived from the respective input YUV->RGB
+// conversion followed by the RGB->YUV for the receiving encoding. They are
+// consistent with the RGB<->YUV functions in gainmapmath.cpp, given that we use
+// BT.709 encoding for sRGB and BT.601 encoding for Display-P3, to match
+// DataSpace.
 
-    const double epsilon = 1e-6;
-    ASSERT(-epsilon <= x && x <= (1.0 + epsilon),
-           "Input should be in range [0, 1] for Rec2020, from %f", x);
-    // x = std::max(0.0, std::min(1.0, x));
+// Yuv Bt709 -> Yuv Bt601
+// Y' = (1.0 * Y) + ( 0.101579 * U) + ( 0.196076 * V)
+// U' = (0.0 * Y) + ( 0.989854 * U) + (-0.110653 * V)
+// V' = (0.0 * Y) + (-0.072453 * U) + ( 0.983398 * V)
+const std::array<float, 9> YUV_BT709_TO_BT601 = {1.0f, 0.101579f,  0.196076f,
+                                                 0.0f, 0.989854f,  -0.110653f,
+                                                 0.0f, -0.072453f, 0.983398f};
 
-    if (x <= 0.5) {
-        return (x * x) / 3.0;
-    } else {
-        return (std::exp((x - c) / a) + b) / 12.0;
-    }
+// Yuv Bt709 -> Yuv Bt2100
+// Y' = (1.0 * Y) + (-0.016969 * U) + ( 0.096312 * V)
+// U' = (0.0 * Y) + ( 0.995306 * U) + (-0.051192 * V)
+// V' = (0.0 * Y) + ( 0.011507 * U) + ( 1.002637 * V)
+const std::array<float, 9> YUV_BT709_TO_BT2100 = {1.0f, -0.016969f, 0.096312f,
+                                                  0.0f, 0.995306f,  -0.051192f,
+                                                  0.0f, 0.011507f,  1.002637f};
+
+// Yuv Bt601 -> Yuv Bt709
+// Y' = (1.0 * Y) + (-0.118188 * U) + (-0.212685 * V)
+// U' = (0.0 * Y) + ( 1.018640 * U) + ( 0.114618 * V)
+// V' = (0.0 * Y) + ( 0.075049 * U) + ( 1.025327 * V)
+const std::array<float, 9> YUV_BT601_TO_BT709 = {1.0f, -0.118188f, -0.212685f,
+                                                 0.0f, 1.018640f,  0.114618f,
+                                                 0.0f, 0.075049f,  1.025327f};
+
+// Yuv Bt601 -> Yuv Bt2100
+// Y' = (1.0 * Y) + (-0.128245 * U) + (-0.115879 * V)
+// U' = (0.0 * Y) + ( 1.010016 * U) + ( 0.061592 * V)
+// V' = (0.0 * Y) + ( 0.086969 * U) + ( 1.029350 * V)
+const std::array<float, 9> YUV_BT601_TO_BT2100 = {1.0f, -0.128245f, -0.115879,
+                                                  0.0f, 1.010016f,  0.061592f,
+                                                  0.0f, 0.086969f,  1.029350f};
+
+// Yuv Bt2100 -> Yuv Bt709
+// Y' = (1.0 * Y) + ( 0.018149 * U) + (-0.095132 * V)
+// U' = (0.0 * Y) + ( 1.004123 * U) + ( 0.051267 * V)
+// V' = (0.0 * Y) + (-0.011524 * U) + ( 0.996782 * V)
+const std::array<float, 9> YUV_BT2100_TO_BT709 = {1.0f, 0.018149f,  -0.095132f,
+                                                  0.0f, 1.004123f,  0.051267f,
+                                                  0.0f, -0.011524f, 0.996782f};
+
+// Yuv Bt2100 -> Yuv Bt601
+// Y' = (1.0 * Y) + ( 0.117887 * U) + ( 0.105521 * V)
+// U' = (0.0 * Y) + ( 0.995211 * U) + (-0.059549 * V)
+// V' = (0.0 * Y) + (-0.084085 * U) + ( 0.976518 * V)
+const std::array<float, 9> YUV_BT2100_TO_BT601 = {1.0f, 0.117887f,  0.105521f,
+                                                  0.0f, 0.995211f,  -0.059549f,
+                                                  0.0f, -0.084085f, 0.976518f};
+
+Color YUVColorGamutConversion(Color e_gamma,
+                              const std::array<float, 9> &coeffs) {
+    const float y = e_gamma.y * std::get<0>(coeffs) +
+                    e_gamma.u * std::get<1>(coeffs) +
+                    e_gamma.v * std::get<2>(coeffs);
+    const float u = e_gamma.y * std::get<3>(coeffs) +
+                    e_gamma.u * std::get<4>(coeffs) +
+                    e_gamma.v * std::get<5>(coeffs);
+    const float v = e_gamma.y * std::get<6>(coeffs) +
+                    e_gamma.u * std::get<7>(coeffs) +
+                    e_gamma.v * std::get<8>(coeffs);
+    return {{{y, u, v}}};
 }
-
-double Rec2020GammaToLinear(double x) {
-    const double alpha = 1.09929682680944;
-    const double beta = 0.018053968510807;
-    const double epsilon = 1e-6;
-    ASSERT(-epsilon <= x && x <= (1.0 + epsilon),
-           "Input should be in range [0, 1] for Rec2020, from %f", x);
-
-    if (x < beta * 4.5) {
-        return x / 4.5;
-    } else {
-        return std::pow((x + alpha - 1) / alpha, 1 / 0.45);
-    }
+Color YUV_Bt709ToBt601(Color e) {
+    return YUVColorGamutConversion(e, YUV_BT709_TO_BT601);
 }
-
-double P3PQToLinear(double x) {
-    const double epsilon = 1e-6;
-    ASSERT(-epsilon <= x && x <= (1.0 + epsilon),
-           "Input should be in range [0, 1], from %f", x);
-    // SMPTE ST 2084 constants
-    const double m1 = 2610.0 / 16384;
-    const double m2 = 128.0 * 2523.0 / 4096;
-    const double c1 = 3424.0 / 4096.0;
-    const double c2 = 32.0 * 2413.0 / 4096.0;
-    const double c3 = 32.0 * 2392.0 / 4096.0;
-
-    double xpow = std::pow(x, 1.0 / m2);
-    double num = std::max(xpow - c1, 0.0);
-    double den = c2 - c3 * xpow;
-
-    // REVISIT:
-    // Result is in nits (cd/m²), normalized by 10000 nits
-    // For typical display, you may need to adjust this scale factor
-    return std::pow(num / den, 1.0 / m1);
+Color YUV_Bt709ToBt2100(Color e) {
+    return YUVColorGamutConversion(e, YUV_BT709_TO_BT2100);
 }
-
-double sRGBToLinear(double x) {
-    const double epsilon = 1e-6;
-    ASSERT(-epsilon <= x && x <= (1.0 + epsilon),
-           "Input should be in range [0, 1], from %f", x);
-    if (x <= 0.04045) {
-        return x / 12.92;
-    } else {
-        return std::pow((x + 0.055) / 1.055, 2.4);
-    }
+Color YUV_Bt601ToBt709(Color e) {
+    return YUVColorGamutConversion(e, YUV_BT601_TO_BT709);
 }
-
-double LinearToRec2020HLG(double x) {
-    /* Follows ITU-R BT.2100-2 */
-    const double a = 0.17883277;
-    const double b = 1.0 - 4.0 * a;               // 0.28466892;
-    const double c = 0.5 - a * std::log(4.0 * a); // 0.55991073;
-
-    const double epsilon = 1e-6;
-    ASSERT(-epsilon <= x && x <= (1.0 + epsilon),
-           "Input should be in range [0, 1] for Rec2020, from %f", x);
-    // x = std::max(0.0, std::min(1.0, x));
-
-    if (x <= 1.0 / 12.0) {
-        return std::sqrt(3 * x);
-    } else {
-        return a * std::log(12.0 * x - b) + c;
-    }
+Color YUV_Bt601ToBt2100(Color e) {
+    return YUVColorGamutConversion(e, YUV_BT601_TO_BT2100);
 }
-
-double LinearToRec2020Gamma(double x) {
-    const double alpha = 1.09929682680944;
-    const double beta = 0.018053968510807;
-    const double epsilon = 1e-6;
-    ASSERT(-epsilon <= x && x <= (1.0 + epsilon),
-           "Input should be in range [0, 1] for Rec2020, from %f", x);
-
-    if (x < beta) {
-        return x * 4.5;
-    } else {
-        return alpha * std::pow(x, 0.45) - (alpha - 1);
-    }
+Color YUV_Bt2100ToBt709(Color e) {
+    return YUVColorGamutConversion(e, YUV_BT2100_TO_BT709);
 }
-
-double LinearToP3PQ(double x) {
-    const double epsilon = 1e-6;
-    ASSERT(-epsilon <= x && x <= (1.0 + epsilon),
-           "Input should be in range [0, 1], from %f", x);
-    // REVISIT:
-    // assumes normalization by 10_000 nits
-    const double m1 = 2610.0 / 16384;
-    const double m2 = 128.0 * 2523.0 / 4096;
-    const double c1 = 3424.0 / 4096.0;
-    const double c2 = 32.0 * 2413.0 / 4096.0;
-    const double c3 = 32.0 * 2392.0 / 4096.0;
-
-    // Convert from [0,1] range to absolute nits (assuming 10000 nits max)
-    double y = x; // * 10000.0;
-
-    // Clamp input to avoid NaN/infinity issues
-    // y = std::max(0.0, y);
-
-    double ym1 = std::pow(y, m1);
-    double num = c1 + c2 * ym1;
-    double den = 1.0 + c3 * ym1;
-
-    return std::pow(num / den, m2);
-}
-
-double LinearTosRGB(double x) {
-    const double epsilon = 1e-6;
-    ASSERT(-epsilon <= x && x <= (1.0 + epsilon),
-           "Input should be in range [0, 1], from %f", x);
-    if (x <= 0.0031308) {
-        return 12.92 * x;
-    } else {
-        return 1.055 * std::pow(x, 1.0 / 2.4) - 0.055;
-    }
-}
-
-// ----------------------------------------
-// YUV CONVERSION
-// ----------------------------------------
-
-// See ITU-R BT.2100-2, Table 6, Derivation of colour difference signals.
-// BT.2100 uses the same coefficients for calculating luma signal and luminance,
-// so we reuse the luminance function here.
-std::vector<double> LinearBt2100ToYUV(const std::vector<double> &rgb) {
-    const double bt2100r = 0.2627, bt2100g = 0.677998, bt2100b = 0.059302;
-    const double bt2100Cb = (2 * (1 - bt2100b)), bt2100Cr = (2 * (1 - bt2100r));
-
-    double y_gamma = rgb[0] * bt2100r + rgb[1] * bt2100g + rgb[2] * bt2100b;
-    return {y_gamma, (rgb[2] - y_gamma) / bt2100Cb,
-            (rgb[0] - y_gamma) / bt2100Cr};
-}
-
-// See IEC 61966-2-1/Amd 1:2003, Equation F.7.
-// See ITU-R BT.709-6, Section 3.
-// Uses the same coefficients for deriving luma signal as
-// IEC 61966-2-1/Amd 1:2003 states for luminance, so we reuse the luminance
-// function above.
-std::vector<double> LinearsRGBToYUV(const std::vector<double> &rgb) {
-    const double sRGBr = 0.212639, sRGBg = 0.715169, sRGBb = 0.072192;
-    const double sRGBCb = (2 * (1 - sRGBb)), sRGBCr = (2 * (1 - sRGBr));
-
-    double y_gamma = rgb[0] * sRGBr + rgb[1] * sRGBg + rgb[2] * sRGBb;
-    return {y_gamma, (rgb[2] - y_gamma) / sRGBCb, (rgb[0] - y_gamma) / sRGBCr};
+Color YUV_Bt2100ToBt601(Color e) {
+    return YUVColorGamutConversion(e, YUV_BT2100_TO_BT601);
 }
 
 double ApplyToneMapping(double x, ToneMapping mode, double target_nits = 100.0,
@@ -575,162 +517,10 @@ double ApplyToneMapping(double x, ToneMapping mode, double target_nits = 100.0,
     return x;
 }
 
-// DEPRECATE:
-// std::unique_ptr<imageops::PNGImage>
-// HDRToYUV(const std::unique_ptr<imageops::PNGImage> &hdr_image, double clip_low,
-//          double clip_high, utils::Error &error, ToneMapping mode) {
-//     if (!hdr_image || !hdr_image->row_pointers) {
-//         error = {true, "Invalid input HDR image"};
-//         return nullptr;
-//     }
-// 
-//     auto raw_image = std::make_unique<imageops::PNGImage>();
-//     raw_image->width = hdr_image->width;
-//     raw_image->height = hdr_image->height;
-//     raw_image->color_type = PNG_COLOR_TYPE_RGB;
-//     raw_image->bit_depth = hdr_image->bit_depth;
-//     // REVISIT: is this right?
-//     raw_image->bytes_per_row = hdr_image->bytes_per_row;
-// 
-//     raw_image->row_pointers =
-//         (png_bytep *)malloc(sizeof(png_bytep) * raw_image->height);
-//     for (size_t y = 0; y < raw_image->height; y++) {
-//         raw_image->row_pointers[y] =
-//             (png_byte *)malloc(raw_image->bytes_per_row);
-//     }
-// 
-//     const size_t channels = 3;
-//     for (size_t y = 0; y < hdr_image->height; y++) {
-//         png_bytep hdr_row = hdr_image->row_pointers[y];
-//         png_bytep raw_row = raw_image->row_pointers[y];
-// 
-//         for (size_t x = 0; x < hdr_image->width; x++) {
-//             size_t raw_idx = x * channels;
-// 
-//             uint16_t values[3];
-//             for (size_t i = 0; i < 3; i++) {
-//                 // *2 because input is 16-bit
-//                 size_t idx = x * channels * 2 + i * 2;
-//                 // PNG stores in network byte order (big-endian)
-//                 values[i] = (hdr_row[idx] << 8) | hdr_row[idx + 1];
-//             }
-// 
-//             double r = (static_cast<double>(values[0]) / 65535.0);
-//             double g = (static_cast<double>(values[1]) / 65535.0);
-//             double b = (static_cast<double>(values[2]) / 65535.0);
-// 
-//             r = Rec2020HLGToLinear(r);
-//             g = Rec2020HLGToLinear(g);
-//             b = Rec2020HLGToLinear(b);
-//             // REVISIT: what to clip to?
-//             r = CLIP(r, 0.0, 1.0);
-//             g = CLIP(g, 0.0, 1.0);
-//             b = CLIP(b, 0.0, 1.0);
-// 
-//             raw_row[raw_idx + 0] = r;
-//             raw_row[raw_idx + 1] = g;
-//             raw_row[raw_idx + 2] = b;
-//         }
-//     }
-// 
-//     return raw_image;
-// }
-// 
-// std::unique_ptr<imageops::PNGImage>
-// HDRToSDR(const std::unique_ptr<imageops::PNGImage> &hdr_image, double clip_low,
-//          double clip_high, utils::Error &error,
-//          ToneMapping tone_mapping = ToneMapping::BASE) {
-//     if (!hdr_image || !hdr_image->row_pointers) {
-//         error = {true, "Invalid input HDR image"};
-//         return nullptr;
-//     }
-// 
-//     std::unique_ptr<imageops::PNGImage> sdr_image =
-//         std::make_unique<imageops::PNGImage>();
-//     sdr_image->width = hdr_image->width;
-//     sdr_image->height = hdr_image->height;
-//     sdr_image->color_type = PNG_COLOR_TYPE_RGB;
-//     sdr_image->bit_depth = 8;
-//     sdr_image->bytes_per_row = hdr_image->width * 3;
-// 
-//     sdr_image->row_pointers =
-//         (png_bytep *)malloc(sizeof(png_bytep) * sdr_image->height);
-//     for (size_t y = 0; y < sdr_image->height; y++) {
-//         sdr_image->row_pointers[y] =
-//             (png_byte *)malloc(sdr_image->bytes_per_row);
-//     }
-// 
-//     const size_t channels = 3;
-// 
-//     // REVISIT:
-//     // double max_value = 0.0;
-//     // if (params.auto_clip) {
-//     //     std::vector<double> all_values;
-//     //     all_values.reserve(hdr_image->width * hdr_image->height * channels);
-//     //     for (size_t y = 0; y < hdr_image->height; y++) {
-//     //         png_bytep row = hdr_image->row_pointers[y];
-//     //         for (size_t x = 0; x < hdr_image->width; x++) {
-//     //             for (size_t c = 0; c < channels; c++) {
-//     //                 size_t idx = x * channels + c;
-//     //                 // Convert 16-bit value to double [0,1]
-//     //                 uint16_t value = (row[idx * 2] << 8) | row[idx * 2 + 1];
-//     //                 all_values.push_back(value / 65535.0);
-//     //             }
-//     //         }
-//     //     }
-//     //     // Sort to find 99.9th percentile
-//     //     std::sort(all_values.begin(), all_values.end());
-//     //     size_t percentile_idx = static_cast<size_t>(all_values.size() *
-//     //     0.999); max_value = all_values[percentile_idx];
-//     // } else {
-//     //     max_value = params.clip_high > 0 ? params.clip_high : 1.0;
-//     // }
-// 
-//     for (size_t y = 0; y < hdr_image->height; y++) {
-//         png_bytep hdr_row = hdr_image->row_pointers[y];
-//         png_bytep sdr_row = sdr_image->row_pointers[y];
-// 
-//         for (size_t x = 0; x < hdr_image->width; x++) {
-//             size_t sdr_idx = x * channels;
-// 
-//             uint16_t values[3];
-//             for (size_t i = 0; i < 3; i++) {
-//                 // *2 because input is 16-bit
-//                 size_t idx = x * channels * 2 + i * 2;
-//                 // PNG stores in network byte order (big-endian)
-//                 values[i] = (hdr_row[idx] << 8) | hdr_row[idx + 1];
-//             }
-// 
-//             double r = (static_cast<double>(values[0]) / 65535.0);
-//             double g = (static_cast<double>(values[1]) / 65535.0);
-//             double b = (static_cast<double>(values[2]) / 65535.0);
-// 
-//             r = Rec2020HLGToLinear(r);
-//             g = Rec2020HLGToLinear(g);
-//             b = Rec2020HLGToLinear(b);
-//             // REVISIT: what to clip to?
-//             r = CLIP(r, 0.0, 1.0);
-//             g = CLIP(g, 0.0, 1.0);
-//             b = CLIP(b, 0.0, 1.0);
-//             r = ApplyToneMapping(r, tone_mapping);
-//             g = ApplyToneMapping(g, tone_mapping);
-//             b = ApplyToneMapping(b, tone_mapping);
-//             // LinearRec2020ToLinearsRGB(r, g, b);
-//             std::vector<double> rgb =
-//                 XYZToLinearsRGB(LinearRec2020ToXYZ({r, g, b}));
-//             r = LinearTosRGB(CLIP(rgb[0], 0.0, 1.0));
-//             g = LinearTosRGB(CLIP(rgb[1], 0.0, 1.0));
-//             b = LinearTosRGB(CLIP(rgb[2], 0.0, 1.0));
-// 
-//             sdr_row[sdr_idx + 0] =
-//                 static_cast<uint8_t>(CLIP(r * 255.0, 0.0, 255.0));
-//             sdr_row[sdr_idx + 1] =
-//                 static_cast<uint8_t>(CLIP(g * 255.0, 0.0, 255.0));
-//             sdr_row[sdr_idx + 2] =
-//                 static_cast<uint8_t>(CLIP(b * 255.0, 0.0, 255.0));
-//         }
-//     }
-// 
-//     return sdr_image;
-// }
+Color ApplyToneMapping(Color rgb, ToneMapping mode, double target_nits = 100.0,
+                       double max_nits = 100.0) {
+    return {{{ApplyToneMapping(rgb.r, mode, target_nits, max_nits),
+              ApplyToneMapping(rgb.g, mode, target_nits, max_nits),
+              ApplyToneMapping(rgb.b, mode, target_nits, max_nits)}}};
+}
 } // namespace colorspace

@@ -104,20 +104,18 @@ int main(int argc, char *argv[]) {
 
     utils::Error error;
     std::cout << "Loading image: " << input_file << std::endl;
-    std::unique_ptr<imageops::PNGImage> hdr_image =
+    std::unique_ptr<imageops::Image> hdr_image =
         imageops::LoadImage(input_file, error);
     if (error.raise) {
         std::cerr << "Failed to load image: " << error.message << std::endl;
         return 1;
     }
 
-    std::unique_ptr<imageops::PNGImage> output_image;
+    std::unique_ptr<imageops::Image> output_image;
     switch (mode) {
     case ConversionMode::HDR_TO_YUV:
         std::cout << "Converting HDR to YUV..." << std::endl;
-        // TODO: clip low/high, and nits params in bas computation?
-        output_image = imageops::HDRToYUV(hdr_image, 1.0, 1.0, error,
-                                          imageops::ToneMapping::BASE);
+        // TODO:
         if (error.raise) {
             std::cerr << "Failed to convert to SDR: " << error.message
                       << std::endl;
@@ -127,8 +125,7 @@ int main(int argc, char *argv[]) {
 
     case ConversionMode::HDR_TO_SDR:
         std::cout << "Converting HDR to SDR..." << std::endl;
-        output_image = imageops::HDRToSDR(hdr_image, 0.0, 1.0, error,
-                                          imageops::ToneMapping::BASE);
+        // TODO:
         if (error.raise) {
             std::cerr << "Failed to convert to SDR: " << error.message
                       << std::endl;

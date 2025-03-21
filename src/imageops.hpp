@@ -1,7 +1,7 @@
 #ifndef API_HPP
 #define API_HPP
-#include "utils.h"
 #include "colorspace.hpp"
+#include "utils.h"
 #include <cstdint>
 #include <memory>
 #include <png.h>
@@ -13,18 +13,10 @@ namespace imageops {
 // ----------------------------------------
 // DATA CONTAINERS
 // ----------------------------------------
-
-struct PNGImage {
-    size_t width{0};
-    size_t height{0};
-    uint8_t color_type{0};
-    uint8_t bit_depth{0};
-    size_t bytes_per_row;
-    png_bytep *row_pointers;
-};
-
+//
 struct ImageMetadata {
     colorspace::ColorSpace color_space;
+    colorspace::OETF oetf;
     double clip_low{0.0};
     double clip_high{1.0};
     double offset_hdr{0.015625};
@@ -32,6 +24,15 @@ struct ImageMetadata {
     double min_content_boost{1.0};
     double max_content_boost{4.0};
     double map_gamma{1.0};
+};
+
+struct Image {
+    size_t width{0};
+    size_t height{0};
+    uint8_t bit_depth{0};
+    size_t bytes_per_row;
+    png_bytep *row_pointers;
+    ImageMetadata metadata;
 };
 
 enum class HDRFormat {
@@ -50,17 +51,15 @@ HDRFormat DetectFormat(const std::string &filename);
 // ----------------------------------------
 // INVOLVED IO
 // ----------------------------------------
-std::unique_ptr<PNGImage> LoadImage(const std::string &filename,
-                                    utils::Error &error);
+std::unique_ptr<Image> LoadImage(const std::string &filename,
+                                 utils::Error &error);
 void LoadAVIF(const std::string &filename, utils::Error &error);
-std::unique_ptr<PNGImage> LoadHDRPNG(const std::string &filename,
-                                     utils::Error &error);
-ImageMetadata ReadAVIFMetadata(const std::string &filename,
-                               utils::Error &error);
-ImageMetadata ReadHDRPNGMetadata(const std::string &filename,
+std::unique_ptr<Image> LoadHDRPNG(const std::string &filename,
+                                  utils::Error &error);
+ImageMetadata ReadMetadata(const std::string &filename,
                                  utils::Error &error);
 
-bool WriteToPNG(const std::unique_ptr<PNGImage> &image,
+bool WriteToPNG(const std::unique_ptr<Image> &image,
                 const std::string &filename, utils::Error &error);
 bool WriteToNumpy(const std::vector<double> &data, int width, int height,
                   int channels, const std::string &dtype_str,
