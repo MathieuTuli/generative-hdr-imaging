@@ -13,6 +13,8 @@
             throw std::runtime_error(""); \
         } \
     } while (false)
+#define CLIP(x, min, max) ((x) < (min)) ? (min) : ((x) > (max)) ? (max) : (x)
+#define CLAMP(x) CLIP(x, 0.0, 1.0)
 namespace utils {
 
 struct Error {
