@@ -38,7 +38,7 @@ bool ValidateHeader(const std::string &filename, utils::Error &error) {
 HDRFormat DetectFormat(const std::string &filename) {
     if (HasExtension(filename, ".avif"))
         return HDRFormat::AVIF;
-    if (HasExtension(filename, ".hdr"))
+    if (HasExtension(filename, ".png"))
         return imageops::HDRFormat::HDRPNG;
     return HDRFormat::UNKNOWN;
 }
@@ -171,18 +171,17 @@ std::unique_ptr<Image> LoadHDRPNG(const std::string &filename,
     return image;
 }
 
-ImageMetadata ReadMetadata(const std::string &filename,
-                                 utils::Error &error) {
+ImageMetadata ReadMetadata(const std::string &filename, utils::Error &error) {
     ImageMetadata metadata;
     std::unique_ptr<ExifTool> et(new ExifTool());
-    
+
     if (!et) {
         error = {true, "Failed to create ExifTool instance"};
         return metadata;
     }
 
     TagInfo *info = et->ImageInfo(filename.c_str());
-    
+
     char *err = et->GetError();
     if (err) {
         error = {true, std::string("ExifTool error: ") + err};
@@ -198,11 +197,12 @@ ImageMetadata ReadMetadata(const std::string &filename,
         for (TagInfo *i = info; i; i = i->next) {
             std::string name(i->name);
             std::string value(i->value);
-            
+
             if (name == "TransferCharacteristics") {
                 if (value.find("HLG") != std::string::npos) {
                     metadata.oetf = colorspace::OETF::HLG;
-                } else if (value.find("PQ") != std::string::npos || value.find("2084") != std::string::npos) {
+                } else if (value.find("PQ") != std::string::npos ||
+                           value.find("2084") != std::string::npos) {
                     metadata.oetf = colorspace::OETF::PQ;
                 } else if (value.find("2020") != std::string::npos) {
                     metadata.oetf = colorspace::OETF::HLG;
@@ -211,13 +211,15 @@ ImageMetadata ReadMetadata(const std::string &filename,
                 } else {
                     error = {true, "Unknown transfer function: " + value};
                 }
-            }
-            else if (name == "ColorPrimaries") {
-                if (value.find("2100") != std::string::npos || value.find("2020") != std::string::npos) {
+            } else if (name == "ColorPrimaries") {
+                if (value.find("2100") != std::string::npos ||
+                    value.find("2020") != std::string::npos) {
                     metadata.gamut = colorspace::Gamut::BT2100;
-                } else if (value.find("P3") != std::string::npos || value.find("SMPTE") != std::string::npos) {
+                } else if (value.find("P3") != std::string::npos ||
+                           value.find("SMPTE") != std::string::npos) {
                     metadata.gamut = colorspace::Gamut::BT709;
-                } else if (value.find("709") != std::string::npos || value.find("sRGB") != std::string::npos) {
+                } else if (value.find("709") != std::string::npos ||
+                           value.find("sRGB") != std::string::npos) {
                     metadata.gamut = colorspace::Gamut::BT709;
                 } else {
                     error = {true, "Unknown color space: " + value};
@@ -329,7 +331,7 @@ bool WriteToNumpy(const std::vector<float> &data, int width, int height,
             for (size_t i = 0; i < data.size(); ++i) {
                 // Clamp values between 0 and 255 for uint8
                 uint8_data[i] = static_cast<uint8_t>(
-                    std::max(0.0, std::min(255.0, data[i])));
+                    std::max(0.0f, std::min(255.0f, data[i])));
             }
             npy::SaveArrayAsNumpy(output_path, false, shape.size(),
                                   shape.data(), uint8_data);

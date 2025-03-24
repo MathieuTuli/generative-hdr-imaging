@@ -10,7 +10,7 @@ namespace colorspace {
 // NOTE: sRGB transformations
 
 // See IEC 61966-2-1/Amd 1:2003, Equation F.7.
-static const float SRGB_R = 0.212639, SRGB_G = 0.715169, SRGB_B = 0.072192;
+static const float SRGB_R = 0.212639f, SRGB_G = 0.715169f, SRGB_B = 0.072192f;
 
 float sRGBLuminance(Color e) {
     return SRGB_R * e.r + SRGB_G * e.g + SRGB_B * e.b;
@@ -20,7 +20,7 @@ float sRGBLuminance(Color e) {
 // Uses the same coefficients for deriving luma signal as
 // IEC 61966-2-1/Amd 1:2003 states for luminance, so we reuse the luminance
 // function above.
-static const float SRGB_CB = (2 * (1 - SRGB_B)), SRGB_CR = (2 * (1 - SRGB_R));
+static const float SRGB_CB = (2.f * (1.f - SRGB_B)), SRGB_CR = (2 * (1 - SRGB_R));
 
 // these are gamma encoded, i.e. non-linear
 Color sRGB_RGBToYUV(Color e_gamma) {
@@ -90,15 +90,15 @@ Color sRGB_OETF(Color e) {
 // NOTE: Display-P3 transformations
 
 // See SMPTE EG 432-1, Equation G-7.
-static const float P3_R = 0.2289746, P3_G = 0.6917385, P3_B = 0.0792869;
+static const float P3_R = 0.2289746f, P3_G = 0.6917385f, P3_B = 0.0792869f;
 
 float P3Luminance(Color e) { return P3_R * e.r + P3_G * e.g + P3_B * e.b; }
 
 // See ITU-R BT.601-7, Sections 2.5.1 and 2.5.2.
 // Unfortunately, calculation of luma signal differs from calculation of
 // luminance for Display-P3, so we can't reuse P3Luminance here.
-static const float P3_YR = 0.299, P3_YG = 0.587, P3_YB = 0.114;
-static const float P3_CB = 1.772, P3_CR = 1.402;
+static const float P3_YR = 0.299f, P3_YG = 0.587f, P3_YB = 0.114f;
+static const float P3_CB = 1.772f, P3_CR = 1.402f;
 
 Color P3_RGBToYUV(Color e_gamma) {
     float y_gamma = P3_YR * e_gamma.r + P3_YG * e_gamma.g + P3_YB * e_gamma.b;
@@ -121,7 +121,7 @@ Color P3_YUVToRGB(Color e_gamma) {
 // NOTE: BT.2100 transformations - according to ITU-R BT.2100-2
 
 // See ITU-R BT.2100-2, Table 5, HLG Reference OOTF
-static const float BT2100_R = 0.2627, BT2100_G = 0.677998, BT2100_B = 0.059302;
+static const float BT2100_R = 0.2627f, BT2100_G = 0.677998f, BT2100_B = 0.059302f;
 
 float Bt2100Luminance(Color e) {
     return BT2100_R * e.r + BT2100_G * e.g + BT2100_B * e.b;
@@ -130,8 +130,8 @@ float Bt2100Luminance(Color e) {
 // See ITU-R BT.2100-2, Table 6, Derivation of colour difference signals.
 // BT.2100 uses the same coefficients for calculating luma signal and luminance,
 // so we reuse the luminance function here.
-static const float BT2100_CB = (2 * (1 - BT2100_B)),
-                   BT2100_CR = (2 * (1 - BT2100_R));
+static const float BT2100_CB = (2.f * (1.f - BT2100_B)),
+                   BT2100_CR = (2.f * (1.f - BT2100_R));
 
 Color Bt2100_RGBToYUV(Color e_gamma) {
     float y_gamma = Bt2100Luminance(e_gamma);
@@ -176,7 +176,7 @@ Color Bt2100_YUVToRGB(Color e_gamma) {
 }
 
 // See ITU-R BT.2100-2, Table 5, HLG Reference OETF.
-static const float HLG_A = 0.17883277, HLG_B = 0.28466892, HLG_C = 0.55991073;
+static const float HLG_A = 0.17883277f, HLG_B = 0.28466892f, HLG_C = 0.55991073f;
 
 float HLG_OETF(float e) {
     if (e <= 1.0 / 12.0) {
@@ -236,7 +236,7 @@ Color HLG_InvOETFLUT(Color e_gamma) {
 
 // See ITU-R BT.2100-2, Table 5, Note 5f
 // Gamma = 1.2 + 0.42 * log(kHlgMaxNits / 1000)
-static const float OOTF_GAMMA = 1.2;
+static const float OOTF_GAMMA = 1.2f;
 
 // See ITU-R BT.2100-2, Table 5, HLG Reference OOTF
 Color HLG_OOTF(Color e, LuminanceFn luminance) {
@@ -256,14 +256,14 @@ Color HLG_InvOOTF(Color e, LuminanceFn luminance) {
 }
 
 Color HLG_InvOOTFApprox(Color e, [[maybe_unused]] LuminanceFn luminance) {
-    return {{{std::pow(e.r, 1.0 / OOTF_GAMMA), std::pow(e.g, 1.0 / OOTF_GAMMA),
-              std::pow(e.b, 1.0 / OOTF_GAMMA)}}};
+    return {{{std::pow(e.r, 1.0f / OOTF_GAMMA), std::pow(e.g, 1.0f / OOTF_GAMMA),
+              std::pow(e.b, 1.0f / OOTF_GAMMA)}}};
 }
 
 // See ITU-R BT.2100-2, Table 4, Reference PQ OETF.
-static const float PQ_M1 = 2610.0 / 16384.0, PQ_M2 = 2523.0 / 4096.0 * 128.0;
-static const float PQ_C1 = 3424.0 / 4096.0, PQ_C2 = 2413.0 / 4096.0 * 32.0,
-                   PQ_C3 = 2392.0 / 4096.0 * 32.0;
+static const float PQ_M1 = 2610.0f / 16384.0f, PQ_M2 = 2523.0f / 4096.0f * 128.0f;
+static const float PQ_C1 = 3424.0f / 4096.0f, PQ_C2 = 2413.0f / 4096.0f * 32.0f,
+                   PQ_C3 = 2392.0f / 4096.0f * 32.0f;
 
 float PQ_OETF(float e) {
     if (e <= 0.0)
@@ -292,8 +292,8 @@ Color PQ_OETFLUT(Color e) {
 
 float PQ_InvOETF(float e_gamma) {
     float val = pow(e_gamma, (1 / PQ_M2));
-    return pow((((std::max)(val - PQ_C1, 0.0)) / (PQ_C2 - PQ_C3 * val)),
-               1 / PQ_M1);
+    return pow((((std::max)(val - PQ_C1, 0.0f)) / (PQ_C2 - PQ_C3 * val)),
+               1.f / PQ_M1);
 }
 
 Color PQ_InvOETF(Color e_gamma) {
@@ -605,30 +605,30 @@ float ApplyToneMapping(float x, ToneMapping mode, float target_nits = 100.0,
         // REVISIT: 2.2
         x = std::pow(x, 1.0 / 2.2);
     } else if (mode == ToneMapping::FILMIC) {
-        const float A = 2.51;
-        const float B = 0.03;
-        const float C = 2.43;
-        const float D = 0.59;
-        const float E = 0.14;
+        const float A = 2.51f;
+        const float B = 0.03f;
+        const float C = 2.43f;
+        const float D = 0.59f;
+        const float E = 0.14f;
         x = (x * (A * x + B)) / (x * (C * x + D) + E);
     } else if (mode == ToneMapping::ACES) {
-        const float a = 2.51;
-        const float b = 0.03;
-        const float c = 2.43;
-        const float d = 0.59;
-        const float e = 0.14;
+        const float a = 2.51f;
+        const float b = 0.03f;
+        const float c = 2.43f;
+        const float d = 0.59f;
+        const float e = 0.14f;
         // REVISIT: Exposure adjustment for ACES
         float adjusted = x * 0.6;
         x = (adjusted * (adjusted + b) * a) /
             (adjusted * (adjusted * c + d) + e);
     } else if (mode == ToneMapping::UNCHARTED2) {
-        const float A = 0.15;
-        const float B = 0.50;
-        const float C = 0.10;
-        const float D = 0.20;
-        const float E = 0.02;
-        const float F = 0.30;
-        const float W = 11.2;
+        const float A = 0.15f;
+        const float B = 0.50f;
+        const float C = 0.10f;
+        const float D = 0.20f;
+        const float E = 0.02f;
+        const float F = 0.30f;
+        const float W = 11.2f;
 
         auto uncharted2_tonemap = [=](float x) -> float {
             return ((x * (A * x + C * B) + D * E) / (x * (A * x + B) + D * F)) -
@@ -637,16 +637,16 @@ float ApplyToneMapping(float x, ToneMapping mode, float target_nits = 100.0,
 
         x = uncharted2_tonemap(x) / uncharted2_tonemap(W);
     } else if (mode == ToneMapping::DRAGO) {
-        const float bias = 0.85;
-        const float Lwa = 1.0;
+        const float bias = 0.85f;
+        const float Lwa = 1.0f;
 
         x = std::log(1 + x) / std::log(1 + Lwa);
         x = std::pow(x, bias);
     } else if (mode == ToneMapping::LOTTES) {
         const float a = 1.6;
 
-        const float mid_in = 0.18;
-        const float mid_out = 0.267;
+        const float mid_in = 0.18f;
+        const float mid_out = 0.267f;
 
         const float t = x * a;
         x = t / (t + 1);
@@ -654,13 +654,13 @@ float ApplyToneMapping(float x, ToneMapping mode, float target_nits = 100.0,
         const float z = (mid_in * a) / (mid_in * a + 1);
         x = x * (mid_out / z);
     } else if (mode == ToneMapping::HABLE) {
-        const float A = 0.22; // Shoulder strength
-        const float B = 0.30; // Linear strength
-        const float C = 0.10; // Linear angle
-        const float D = 0.20; // Toe strength
-        const float E = 0.01; // Toe numerator
-        const float F = 0.30; // Toe denominator
-        const float W = 11.2;
+        const float A = 0.22f; // Shoulder strength
+        const float B = 0.30f; // Linear strength
+        const float C = 0.10f; // Linear angle
+        const float D = 0.20f; // Toe strength
+        const float E = 0.01f; // Toe numerator
+        const float F = 0.30f; // Toe denominator
+        const float W = 11.2f;
 
         std::function<float(float)> hable = [=](float x) -> float {
             return (x * (A * x + C * B) + D * E) / (x * (A * x + B) + D * F) -

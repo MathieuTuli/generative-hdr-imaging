@@ -1,4 +1,5 @@
 #include "imageops.hpp"
+#include "gainmap.hpp"
 #include "utils.h"
 #include <getopt.h>
 #include <iostream>
@@ -6,13 +7,12 @@
 
 #define PROGRAM_VERSION "1.0.0"
 
-enum class ConversionMode { HDR_TO_YUV, HDR_TO_SDR };
+enum class ConversionMode { HDR_TO_YUV, HDR_TO_SDR, HDR_TO_UHDR };
 
 void PrintUsage(const char *programName) {
     std::cout << "Usage: " << programName << " [OPTIONS]\n"
               << "\nOptions:\n"
-              << "  -r, --hdr2raw       Convert HDR to YUV\n"
-              << "  -s, --hdr2sdr       Convert HDR to SDR\n"
+              << "  -u, --hdr2uhdr       Convert HDR to SDR + Gainmap\n"
               << "  -i, --input=FILE    Input image file\n"
               << "  -o, --output=FILE   Output image file\n"
               << "  -h, --help          Display this help and exit\n"
@@ -46,7 +46,7 @@ int main(int argc, char *argv[]) {
     int option_index = 0;
     int c;
 
-    while ((c = getopt_long(argc, argv, "hvi:o:rs", long_options,
+    while ((c = getopt_long(argc, argv, "hvi:o:u", long_options,
                             &option_index)) != -1) {
         switch (c) {
         case 'h':
@@ -61,20 +61,12 @@ int main(int argc, char *argv[]) {
         case 'o':
             output_file = optarg;
             break;
-        case 'r':
+        case 'u':
             if (mode_set) {
                 std::cerr << "Error: Only one mode can be specified\n";
                 return 1;
             }
-            mode = ConversionMode::HDR_TO_YUV;
-            mode_set = true;
-            break;
-        case 's':
-            if (mode_set) {
-                std::cerr << "Error: Only one mode can be specified\n";
-                return 1;
-            }
-            mode = ConversionMode::HDR_TO_SDR;
+            mode = ConversionMode::HDR_TO_UHDR;
             mode_set = true;
             break;
         case '?':
@@ -132,13 +124,22 @@ int main(int argc, char *argv[]) {
             return 1;
         }
         break;
+    case ConversionMode::HDR_TO_UHDR:
+        std::cout << "Converting HDR to SDR + Gainmap..." << std::endl;
+        gainmap::HDRToGainMap(hdr_image, 1.0f, error);
+        if (error.raise) {
+            std::cerr << "Failed to convert to SDR + Gainmap: " << error.message
+                      << std::endl;
+            return 1;
+        }
+        break;
     }
 
-    std::cout << "Saving output image: " << output_file << std::endl;
-    if (!imageops::WriteToPNG(output_image, output_file, error)) {
-        std::cerr << "Failed to save image: " << error.message << std::endl;
-        return 1;
-    }
+    // std::cout << "Saving output image: " << output_file << std::endl;
+    // if (!imageops::WriteToPNG(output_image, output_file, error)) {
+    //     std::cerr << "Failed to save image: " << error.message << std::endl;
+    //     return 1;
+    // }
 
     std::cout << "Conversion completed successfully!" << std::endl;
     return 0;

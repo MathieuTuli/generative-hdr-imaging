@@ -6,7 +6,7 @@
 
 namespace gainmap {
 float ComputeGain(float hdr_y_nits, float sdr_y_nits,
-                  float hdr_offset = 0.015625, float sdr_offset = 0.015625) {
+                  float hdr_offset = 0.015625f, float sdr_offset = 0.015625f) {
     float gain = log2((hdr_y_nits + hdr_offset) / (sdr_y_nits + sdr_offset));
     if (sdr_y_nits < 2.f / 255.0f) {
         // If sdr is zero and hdr is non zero, it can result in very large gain
@@ -24,6 +24,7 @@ float AffineMapGain(float gainlog2, float min_gainlog2, float max_gainlog2,
         (gainlog2 - min_gainlog2) / (max_gainlog2 - min_gainlog2);
     if (gamma != 1.0f)
         mapped_val = pow(mapped_val, gamma);
+    return mapped_val;
 }
 
 // The pipeline is as follows:
@@ -79,6 +80,7 @@ void HDRToGainMap(const std::unique_ptr<imageops::Image> &hdr_image,
         colorspace::GetGamutConversionFn(colorspace::Gamut::BT709,
                                          colorspace::Gamut::BT2100);
 
+    std::cout << "Initalized conversion functions" << std::endl;
     const size_t width = hdr_image->width;
     const size_t height = hdr_image->height;
     const size_t channels = 3;
@@ -94,6 +96,7 @@ void HDRToGainMap(const std::unique_ptr<imageops::Image> &hdr_image,
 
     float min_gain = 255.f;
     float max_gain = -255.f;
+    std::cout << "Processing hdr..." << std::endl;
     for (size_t y = 0; y < height; y++) {
         png_bytep hdr_row = hdr_image->row_pointers[y];
         for (size_t x = 0; x < width; x++) {
@@ -168,6 +171,7 @@ void HDRToGainMap(const std::unique_ptr<imageops::Image> &hdr_image,
             gainmap.push_back(gain);
         }
     }
+    std::cout << "Gainmap computed." << std::endl;
 
     // generate map
     // NOTE: from LibUltraHDR
@@ -187,6 +191,7 @@ void HDRToGainMap(const std::unique_ptr<imageops::Image> &hdr_image,
         max_gain += 0.1f; // to avoid div by zero during affine transform
     }
 
+    std::cout << "Computing affine gainmap..." << std::endl;
     for (size_t i = 0; i < gainmap.size(); i++) {
         gainmap[i] = AffineMapGain(gainmap[i], min_gain, max_gain, map_gamma);
 
@@ -196,6 +201,7 @@ void HDRToGainMap(const std::unique_ptr<imageops::Image> &hdr_image,
     }
 
 
+    std::cout << "Saving images and npy..." << std::endl;
     // Save HDR linear image as NPY
     {
         const size_t shape[] = {height, width, channels};

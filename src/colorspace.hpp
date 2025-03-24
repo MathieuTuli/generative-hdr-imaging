@@ -159,11 +159,11 @@ constexpr int32_t GAIN_FACTOR_NUMENTRIES = 1 << GAIN_FACTOR_PRECISION;
 // nominal {SDR, HLG, PQ} peak display luminance
 // This aligns with the suggested default reference diffuse white from ISO/TS
 // 22028-5 sdr white
-static const float SDR_WHITE_NITS = 203.0;
+static const float SDR_WHITE_NITS = 203.0f;
 // hlg peak white. 75% of hlg peak white maps to reference diffuse white
-static const float HLG_MAX_NITS = 1000.0;
+static const float HLG_MAX_NITS = 1000.0f;
 // pq peak white. 58% of pq peak white maps to reference diffuse white
-static const float PQ_MAX_NITS = 10000.0;
+static const float PQ_MAX_NITS = 10000.0f;
 
 // srgb
 float sRGBLuminance(Color e);
