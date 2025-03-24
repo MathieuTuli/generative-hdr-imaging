@@ -93,6 +93,7 @@ void HDRToGainMap(const std::unique_ptr<imageops::Image> &hdr_image,
     sdr_image.reserve(width * height * channels);
     // TODO: we only do single-channel gainmaps for now
     gainmap.reserve(width * height * 1);
+    affine_gainmap.reserve(width * height * 1);
 
     float min_gain = 255.f;
     float max_gain = -255.f;
@@ -195,7 +196,7 @@ void HDRToGainMap(const std::unique_ptr<imageops::Image> &hdr_image,
     for (size_t i = 0; i < gainmap.size(); i++) {
         gainmap[i] = AffineMapGain(gainmap[i], min_gain, max_gain, map_gamma);
 
-        float mapped_gain = gainmap[i] * 255;
+        float mapped_gain = gainmap[i] * 255.f;
         affine_gainmap[i] =
             static_cast<uint8_t>(colorspace::Clip(mapped_gain + 0.5f, 0, 255));
     }
