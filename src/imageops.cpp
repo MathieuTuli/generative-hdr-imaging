@@ -118,8 +118,7 @@ std::unique_ptr<Image> LoadHDRPNG(const std::string &filename,
 
     image->width = png_get_image_width(png, info);
     image->height = png_get_image_height(png, info);
-    // REVISIT:
-    // image->color_type = png_get_color_type(png, info);
+    image->color_type = png_get_color_type(png, info);
     image->bit_depth = png_get_bit_depth(png, info);
     image->bytes_per_row = png_get_rowbytes(png, info);
 

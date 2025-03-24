@@ -6,7 +6,7 @@ TEST_DIRS := ./tests
 LIBS_DIR := ./libs
 BUILD_DIR := ./build
 UNAME_S := $(shell uname -s)
-DEPS_DIR := ./dependencies/
+DEPS_DIR := ./dependencies
 export UNAME_S
 
 # Find all the C and C++ files we want to compile
@@ -90,6 +90,8 @@ CXXFLAGS += -I$(IMGUI_DIR) -I$(IMGUI_DIR)/backends
 EXIF_DIR := $(DEPS_DIR)/exiftool
 SRCS += $(shell find $(EXIF_DIR)/src -name '*.cpp' -or -name '*.c')
 CXXFLAGS += -I$(EXIF_DIR)/inc
+
+CXXFLAGS += -I$(DEPS_DIR)/nlohmann/include
 
 # -- build rules
 # Prepends BUILD_DIR and appends .o to every src file

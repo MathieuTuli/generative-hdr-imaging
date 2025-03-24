@@ -2,7 +2,9 @@
 #include "npy.hpp"
 #include "utils.h"
 #include <cmath>
+#include <fstream>
 #include <iostream>
+#include <nlohmann/json.hpp>
 
 namespace gainmap {
 float ComputeGain(float hdr_y_nits, float sdr_y_nits,
@@ -45,7 +47,7 @@ float AffineMapGain(float gainlog2, float min_gainlog2, float max_gainlog2,
 // linear -> gamma (Bt100 HLG OETF)
 // gamma -> YUV [save]
 void HDRToGainMap(const std::unique_ptr<imageops::Image> &hdr_image,
-                  float map_gamma, utils::Error &error) {
+                  float clip_percentile, float map_gamma, utils::Error &error) {
     if (!hdr_image || !hdr_image->row_pointers) {
         error = {true, "Invalid input HDR image"};
         return;
@@ -137,40 +139,61 @@ void HDRToGainMap(const std::unique_ptr<imageops::Image> &hdr_image,
             hdr_rgb = hdr_gammut_conv(hdr_rgb);
             hdr_rgb = colorspace::ClipNegatives(hdr_rgb);
             hdr_linear_image.push_back(hdr_rgb);
-
-            colorspace::Color sdr_rgb = sdr_gammut_conv(hdr_rgb);
-            colorspace::Clamp(sdr_rgb);
-
-            // TODO: 99% clip
-            colorspace::Color srgb_gamma = sdr_oetf(sdr_rgb);
-            // TODO: apply tone map
-            // TODO: affine quantization?
-            sdr_image.push_back(srgb_gamma);
-
-            uint8_t r = static_cast<uint8_t>(srgb_gamma.r * 255.f);
-            uint8_t g = static_cast<uint8_t>(srgb_gamma.g * 255.f);
-            uint8_t b = static_cast<uint8_t>(srgb_gamma.b * 255.f);
-
-            srgb_gamma.r = static_cast<float>(r) / 255.f;
-            srgb_gamma.g = static_cast<float>(g) / 255.f;
-            srgb_gamma.b = static_cast<float>(b) / 255.f;
-
-            sdr_rgb = sdr_inv_oetf(srgb_gamma);
-
-            colorspace::Color sdr_rgb_bt2100 = sdr_hdr_gamut_conv(sdr_rgb);
-
-            float hdr_y_nits, sdr_y_nits;
-
-            // NOTE: libultrahdr has a version based on max rgb vs. luminance
-            // we use luminance
-            sdr_y_nits = bt2100_luminance_fn(sdr_rgb_bt2100) *
-                         colorspace::SDR_WHITE_NITS;
-            hdr_y_nits = bt2100_luminance_fn(hdr_rgb) * hdr_peaknits;
-            float gain = ComputeGain(hdr_y_nits, sdr_y_nits);
-            min_gain = std::min(gain, min_gain);
-            max_gain = std::max(gain, max_gain);
-            gainmap.push_back(gain);
         }
+    }
+    // NOTE: apply 99.9% clipping to sdr rgb values
+    std::vector<float> all_values;
+    all_values.reserve(width * height * channels);
+    for (const colorspace::Color &color : hdr_linear_image) {
+        all_values.push_back(color.r);
+        all_values.push_back(color.g);
+        all_values.push_back(color.b);
+    }
+
+    std::sort(all_values.begin(), all_values.end());
+    size_t percentile_idx =
+        static_cast<size_t>(all_values.size() * clip_percentile);
+    float clip_value = all_values[percentile_idx];
+    std::cout << "HDR " << clip_percentile
+              << "th-percentile clip value: " << clip_value << std::endl;
+
+    for (size_t i = 0; i < hdr_linear_image.size(); i++) {
+        colorspace::Color hdr_rgb = hdr_linear_image[i];
+        colorspace::Color sdr_rgb = sdr_gammut_conv(hdr_rgb);
+        colorspace::Clamp(sdr_rgb);
+
+        // NOTE: apply 99% clipping
+        sdr_rgb.r = std::min(sdr_rgb.r, clip_value) / clip_value;
+        sdr_rgb.g = std::min(sdr_rgb.g, clip_value) / clip_value;
+        sdr_rgb.b = std::min(sdr_rgb.b, clip_value) / clip_value;
+
+        colorspace::Color srgb_gamma = sdr_oetf(sdr_rgb);
+        // TODO: apply tone map
+        sdr_image.push_back(srgb_gamma);
+
+        uint8_t r = static_cast<uint8_t>(srgb_gamma.r * 255.f);
+        uint8_t g = static_cast<uint8_t>(srgb_gamma.g * 255.f);
+        uint8_t b = static_cast<uint8_t>(srgb_gamma.b * 255.f);
+
+        srgb_gamma.r = static_cast<float>(r) / 255.f;
+        srgb_gamma.g = static_cast<float>(g) / 255.f;
+        srgb_gamma.b = static_cast<float>(b) / 255.f;
+
+        sdr_rgb = sdr_inv_oetf(srgb_gamma);
+
+        colorspace::Color sdr_rgb_bt2100 = sdr_hdr_gamut_conv(sdr_rgb);
+
+        float hdr_y_nits, sdr_y_nits;
+
+        // NOTE: libultrahdr has a version based on max rgb vs. luminance
+        // we use luminance
+        sdr_y_nits =
+            bt2100_luminance_fn(sdr_rgb_bt2100) * colorspace::SDR_WHITE_NITS;
+        hdr_y_nits = bt2100_luminance_fn(hdr_rgb) * hdr_peaknits;
+        float gain = ComputeGain(hdr_y_nits, sdr_y_nits);
+        min_gain = std::min(gain, min_gain);
+        max_gain = std::max(gain, max_gain);
+        gainmap.push_back(gain);
     }
     std::cout << "Gainmap computed." << std::endl;
 
@@ -191,6 +214,10 @@ void HDRToGainMap(const std::unique_ptr<imageops::Image> &hdr_image,
     if (fabs(max_gain - min_gain) < 1.0e-8) {
         max_gain += 0.1f; // to avoid div by zero during affine transform
     }
+    std::cout << "Max/min gain (log2): " << max_gain << "/" << min_gain
+              << std::endl;
+    std::cout << "Max/min gain (exp2): " << exp2(max_gain) << "/"
+              << exp2(min_gain) << std::endl;
 
     std::cout << "Computing affine gainmap..." << std::endl;
     for (size_t i = 0; i < gainmap.size(); i++) {
@@ -201,7 +228,6 @@ void HDRToGainMap(const std::unique_ptr<imageops::Image> &hdr_image,
             static_cast<uint8_t>(colorspace::Clip(mapped_gain + 0.5f, 0, 255));
     }
 
-
     std::cout << "Saving images and npy..." << std::endl;
     // Save HDR linear image as NPY
     {
@@ -209,36 +235,37 @@ void HDRToGainMap(const std::unique_ptr<imageops::Image> &hdr_image,
         bool fortran_order = false;
         std::vector<float> hdr_linear_flat;
         hdr_linear_flat.reserve(width * height * channels);
-        for (const auto& color : hdr_linear_image) {
+        for (const auto &color : hdr_linear_image) {
             hdr_linear_flat.push_back(color.r);
             hdr_linear_flat.push_back(color.g);
             hdr_linear_flat.push_back(color.b);
         }
-        npy::SaveArrayAsNumpy("hdr_linear.npy", fortran_order, 3, shape, hdr_linear_flat);
+        npy::SaveArrayAsNumpy("hdr_linear.npy", fortran_order, 3, shape,
+                              hdr_linear_flat);
     }
 
     // Save SDR image as PNG
     {
-        std::unique_ptr<imageops::Image> sdr_png = std::make_unique<imageops::Image>();
+        std::unique_ptr<imageops::Image> sdr_png =
+            std::make_unique<imageops::Image>();
         sdr_png->width = width;
         sdr_png->height = height;
         sdr_png->bit_depth = 8;
-        // REVISIT:
         sdr_png->color_type = PNG_COLOR_TYPE_RGB;
         sdr_png->channels = channels;
-        
+
         // Allocate row pointers
-        sdr_png->row_pointers = (png_bytep*)malloc(sizeof(png_bytep) * height);
-        for(size_t y = 0; y < height; y++) {
-            sdr_png->row_pointers[y] = (png_byte*)malloc(width * channels);
+        sdr_png->row_pointers = (png_bytep *)malloc(sizeof(png_bytep) * height);
+        for (size_t y = 0; y < height; y++) {
+            sdr_png->row_pointers[y] = (png_byte *)malloc(width * channels);
         }
 
         // Fill pixel data
-        for(size_t y = 0; y < height; y++) {
+        for (size_t y = 0; y < height; y++) {
             png_bytep row = sdr_png->row_pointers[y];
-            for(size_t x = 0; x < width; x++) {
+            for (size_t x = 0; x < width; x++) {
                 size_t idx = y * width + x;
-                const auto& color = sdr_image[idx];
+                const auto &color = sdr_image[idx];
                 size_t pixel_idx = x * channels;
                 row[pixel_idx] = static_cast<uint8_t>(color.r * 255.f);
                 row[pixel_idx + 1] = static_cast<uint8_t>(color.g * 255.f);
@@ -247,41 +274,66 @@ void HDRToGainMap(const std::unique_ptr<imageops::Image> &hdr_image,
         }
 
         imageops::WriteToPNG(sdr_png, "sdr.png", error);
-        if (error.raise) return;
+        if (error.raise)
+            return;
     }
 
     // Save gainmap as NPY
     {
-        const size_t shape[] = {height, width, 1};  // Single channel
+        const size_t shape[] = {height, width, 1}; // Single channel
         bool fortran_order = false;
         npy::SaveArrayAsNumpy("gainmap.npy", fortran_order, 3, shape, gainmap);
     }
 
     // Save affine gainmap as PNG
     {
-        std::unique_ptr<imageops::Image> gainmap_png = std::make_unique<imageops::Image>();
+        std::unique_ptr<imageops::Image> gainmap_png =
+            std::make_unique<imageops::Image>();
         gainmap_png->width = width;
         gainmap_png->height = height;
         gainmap_png->bit_depth = 8;
         gainmap_png->color_type = PNG_COLOR_TYPE_GRAY;
         gainmap_png->channels = 1;
-        
+
         // Allocate row pointers
-        gainmap_png->row_pointers = (png_bytep*)malloc(sizeof(png_bytep) * height);
-        for(size_t y = 0; y < height; y++) {
-            gainmap_png->row_pointers[y] = (png_byte*)malloc(width);
+        gainmap_png->row_pointers =
+            (png_bytep *)malloc(sizeof(png_bytep) * height);
+        for (size_t y = 0; y < height; y++) {
+            gainmap_png->row_pointers[y] = (png_byte *)malloc(width);
         }
 
         // Fill pixel data
-        for(size_t y = 0; y < height; y++) {
+        for (size_t y = 0; y < height; y++) {
             png_bytep row = gainmap_png->row_pointers[y];
-            for(size_t x = 0; x < width; x++) {
+            for (size_t x = 0; x < width; x++) {
                 size_t idx = y * width + x;
                 row[x] = affine_gainmap[idx];
             }
         }
 
         imageops::WriteToPNG(gainmap_png, "gainmap.png", error);
+    }
+
+    // Save metadata as JSON
+    {
+        nlohmann::json metadata;
+        metadata["max_gain_log2"] = max_gain;
+        metadata["max_gain_exp2"] = exp2(max_gain);
+        metadata["min_gain_log2"] = min_gain;
+        metadata["min_gain_exp2"] = exp2(min_gain);
+        metadata["map_gamma"] = map_gamma;
+        metadata["hdr_offset"] = 0.015625f;
+        metadata["sdr_offset"] = 0.015625f;
+        metadata["hdr_capacity_min"] = 1.0f;
+        metadata["hdr_capacity_max"] =
+            hdr_peaknits / colorspace::SDR_WHITE_NITS;
+
+        std::ofstream metadata_file("metadata.json");
+        if (!metadata_file.is_open()) {
+            error = {true, "Failed to open metadata.json for writing"};
+            return;
+        }
+        metadata_file << std::setw(4) << metadata << std::endl;
     }
 }
 } // namespace gainmap

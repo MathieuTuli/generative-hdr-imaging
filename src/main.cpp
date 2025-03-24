@@ -1,5 +1,5 @@
-#include "imageops.hpp"
 #include "gainmap.hpp"
+#include "imageops.hpp"
 #include "utils.h"
 #include <getopt.h>
 #include <iostream>
@@ -10,16 +10,17 @@
 enum class ConversionMode { HDR_TO_YUV, HDR_TO_SDR, HDR_TO_UHDR };
 
 void PrintUsage(const char *programName) {
-    std::cout << "Usage: " << programName << " [OPTIONS]\n"
-              << "\nOptions:\n"
-              << "  -u, --hdr2uhdr       Convert HDR to SDR + Gainmap\n"
-              << "  -i, --input=FILE    Input image file\n"
-              << "  -o, --output=FILE   Output image file\n"
-              << "  -h, --help          Display this help and exit\n"
-              << "  -v, --version       Output version information and exit\n"
-              << "\nExample:\n"
-              << "  " << programName
-              << " -i input.exr -o output.png --hdr2sdr\n";
+    std::cout
+        << "Usage: " << programName << " [OPTIONS]\n"
+        << "\nOptions:\n"
+        << "  -u, --hdr2uhdr       Convert HDR to SDR + Gainmap\n"
+        << "  -i, --input=FILE    Input image file\n"
+        << "  -o, --output=FILE   Output image file\n"
+        << "  -p, --percentile=N  Clip percentile for gainmap (default: 0.95)\n"
+        << "  -h, --help          Display this help and exit\n"
+        << "  -v, --version       Output version information and exit\n"
+        << "\nExample:\n"
+        << "  " << programName << " -i input.exr -o output.png --hdr2sdr\n";
 }
 
 void PrintVersion(const char *programName) {
@@ -33,6 +34,7 @@ int main(int argc, char *argv[]) {
     std::string output_file;
     ConversionMode mode;
     bool mode_set = false;
+    float clip_percentile = 0.95f;
 
     static struct option long_options[] = {
         {"help", no_argument, 0, 'h'},
@@ -41,12 +43,13 @@ int main(int argc, char *argv[]) {
         {"output", required_argument, 0, 'o'},
         {"hdr2raw", no_argument, 0, 'r'},
         {"hdr2sdr", no_argument, 0, 's'},
+        {"percentile", required_argument, 0, 'p'},
         {0, 0, 0, 0}};
 
     int option_index = 0;
     int c;
 
-    while ((c = getopt_long(argc, argv, "hvi:o:u", long_options,
+    while ((c = getopt_long(argc, argv, "hvi:o:up:", long_options,
                             &option_index)) != -1) {
         switch (c) {
         case 'h':
@@ -68,6 +71,13 @@ int main(int argc, char *argv[]) {
             }
             mode = ConversionMode::HDR_TO_UHDR;
             mode_set = true;
+            break;
+        case 'p':
+            clip_percentile = std::stof(optarg);
+            if (clip_percentile <= 0.0f || clip_percentile >= 1.0f) {
+                std::cerr << "Error: Percentile must be between 0 and 1\n";
+                return 1;
+            }
             break;
         case '?':
             return 1;
@@ -126,7 +136,7 @@ int main(int argc, char *argv[]) {
         break;
     case ConversionMode::HDR_TO_UHDR:
         std::cout << "Converting HDR to SDR + Gainmap..." << std::endl;
-        gainmap::HDRToGainMap(hdr_image, 1.0f, error);
+        gainmap::HDRToGainMap(hdr_image, clip_percentile, 1.0f, error);
         if (error.raise) {
             std::cerr << "Failed to convert to SDR + Gainmap: " << error.message
                       << std::endl;
