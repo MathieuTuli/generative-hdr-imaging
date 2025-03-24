@@ -271,7 +271,7 @@ bool WriteToPNG(const std::unique_ptr<Image> &image,
     png_init_io(png, fp);
 
     // Set to 8-bit depth, RGB format
-    png_set_IHDR(png, info, image->width, image->height, 8, PNG_COLOR_TYPE_RGB,
+    png_set_IHDR(png, info, image->width, image->height, 8, image->color_type,
                  PNG_INTERLACE_NONE, PNG_COMPRESSION_TYPE_DEFAULT,
                  PNG_FILTER_TYPE_DEFAULT);
 

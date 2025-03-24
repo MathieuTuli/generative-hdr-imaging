@@ -224,7 +224,7 @@ void HDRToGainMap(const std::unique_ptr<imageops::Image> &hdr_image,
         sdr_png->height = height;
         sdr_png->bit_depth = 8;
         // REVISIT:
-        // sdr_png->color_type = PNG_COLOR_TYPE_RGB;
+        sdr_png->color_type = PNG_COLOR_TYPE_RGB;
         sdr_png->channels = channels;
         
         // Allocate row pointers
