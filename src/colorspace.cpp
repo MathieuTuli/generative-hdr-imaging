@@ -10,9 +10,9 @@ namespace colorspace {
 // NOTE: sRGB transformations
 
 // See IEC 61966-2-1/Amd 1:2003, Equation F.7.
-static const double SRGB_R = 0.212639, SRGB_G = 0.715169, SRGB_B = 0.072192;
+static const float SRGB_R = 0.212639, SRGB_G = 0.715169, SRGB_B = 0.072192;
 
-double sRGBLuminance(Color e) {
+float sRGBLuminance(Color e) {
     return SRGB_R * e.r + SRGB_G * e.g + SRGB_B * e.b;
 }
 
@@ -20,11 +20,11 @@ double sRGBLuminance(Color e) {
 // Uses the same coefficients for deriving luma signal as
 // IEC 61966-2-1/Amd 1:2003 states for luminance, so we reuse the luminance
 // function above.
-static const double SRGB_CB = (2 * (1 - SRGB_B)), SRGB_CR = (2 * (1 - SRGB_R));
+static const float SRGB_CB = (2 * (1 - SRGB_B)), SRGB_CR = (2 * (1 - SRGB_R));
 
 // these are gamma encoded, i.e. non-linear
 Color sRGB_RGBToYUV(Color e_gamma) {
-    double y_gamma = sRGBLuminance(e_gamma);
+    float y_gamma = sRGBLuminance(e_gamma);
     return {{{y_gamma, (e_gamma.b - y_gamma) / SRGB_CB,
               (e_gamma.r - y_gamma) / SRGB_CR}}};
 }
@@ -32,8 +32,8 @@ Color sRGB_RGBToYUV(Color e_gamma) {
 // See ITU-R BT.709-6, Section 3.
 // Same derivation to BT.2100's YUV->RGB, below. Similar to srgbRgbToYuv, we
 // can reuse the luminance coefficients since they are the same.
-static const double SRGB_GCB = SRGB_B * SRGB_CB / SRGB_G;
-static const double SRGB_GCR = SRGB_R * SRGB_CR / SRGB_G;
+static const float SRGB_GCB = SRGB_B * SRGB_CB / SRGB_G;
+static const float SRGB_GCR = SRGB_R * SRGB_CR / SRGB_G;
 
 Color sRGB_YUVToRGB(Color e_gamma) {
     return {{{CLAMP(e_gamma.y + SRGB_CR * e_gamma.v),
@@ -42,7 +42,7 @@ Color sRGB_YUVToRGB(Color e_gamma) {
 }
 
 // See IEC 61966-2-1/Amd 1:2003, Equations F.5 and F.6.
-double sRGB_InvOETF(double e_gamma) {
+float sRGB_InvOETF(float e_gamma) {
     if (e_gamma <= 0.04045) {
         return e_gamma / 12.92;
     } else {
@@ -55,14 +55,14 @@ Color sRGB_InvOETF(Color e_gamma) {
               sRGB_InvOETF(e_gamma.b)}}};
 }
 
-double sRGB_InvOETFLUT(double e_gamma){
+float sRGB_InvOETFLUT(float e_gamma) {
     int32_t value =
         static_cast<int32_t>(e_gamma * (SRGB_INV_OETF_NUMENTRIES - 1) + 0.5);
     // TODO() : Remove once conversion modules have appropriate clamping in
     // place
     value = CLIP(value, 0, SRGB_INV_OETF_NUMENTRIES - 1);
     static LookUpTable kSrgbLut(SRGB_INV_OETF_NUMENTRIES,
-                                static_cast<double (*)(double)>(sRGB_InvOETF));
+                                static_cast<float (*)(float)>(sRGB_InvOETF));
     return kSrgbLut.getTable()[value];
 }
 
@@ -72,11 +72,11 @@ Color sRGB_InvOETFLUT(Color e_gamma) {
 }
 
 // See IEC 61966-2-1/Amd 1:2003, Equations F.10 and F.11.
-double sRGB_OETF(double e) {
-    constexpr double threshold = 0.0031308;
-    constexpr double low_slope = 12.92;
-    constexpr double high_offset = 0.055;
-    constexpr double power_exponent = 1.0 / 2.4;
+float sRGB_OETF(float e) {
+    constexpr float threshold = 0.0031308;
+    constexpr float low_slope = 12.92;
+    constexpr float high_offset = 0.055;
+    constexpr float power_exponent = 1.0 / 2.4;
     if (e <= threshold) {
         return low_slope * e;
     }
@@ -90,18 +90,18 @@ Color sRGB_OETF(Color e) {
 // NOTE: Display-P3 transformations
 
 // See SMPTE EG 432-1, Equation G-7.
-static const double P3_R = 0.2289746, P3_G = 0.6917385, P3_B = 0.0792869;
+static const float P3_R = 0.2289746, P3_G = 0.6917385, P3_B = 0.0792869;
 
-double P3Luminance(Color e) { return P3_R * e.r + P3_G * e.g + P3_B * e.b; }
+float P3Luminance(Color e) { return P3_R * e.r + P3_G * e.g + P3_B * e.b; }
 
 // See ITU-R BT.601-7, Sections 2.5.1 and 2.5.2.
 // Unfortunately, calculation of luma signal differs from calculation of
 // luminance for Display-P3, so we can't reuse P3Luminance here.
-static const double P3_YR = 0.299, P3_YG = 0.587, P3_YB = 0.114;
-static const double P3_CB = 1.772, P3_CR = 1.402;
+static const float P3_YR = 0.299, P3_YG = 0.587, P3_YB = 0.114;
+static const float P3_CB = 1.772, P3_CR = 1.402;
 
 Color P3_RGBToYUV(Color e_gamma) {
-    double y_gamma = P3_YR * e_gamma.r + P3_YG * e_gamma.g + P3_YB * e_gamma.b;
+    float y_gamma = P3_YR * e_gamma.r + P3_YG * e_gamma.g + P3_YB * e_gamma.b;
     return {{{y_gamma, (e_gamma.b - y_gamma) / P3_CB,
               (e_gamma.r - y_gamma) / P3_CR}}};
 }
@@ -109,8 +109,8 @@ Color P3_RGBToYUV(Color e_gamma) {
 // See ITU-R BT.601-7, Sections 2.5.1 and 2.5.2.
 // Same derivation to BT.2100's YUV->RGB, below. Similar to P3_RGBToYUV, we must
 // use luma signal coefficients rather than the luminance coefficients.
-static const double P3_GCB = P3_YB * P3_CB / P3_YG;
-static const double P3_GCR = P3_YR * P3_CR / P3_YG;
+static const float P3_GCB = P3_YB * P3_CB / P3_YG;
+static const float P3_GCR = P3_YR * P3_CR / P3_YG;
 
 Color P3_YUVToRGB(Color e_gamma) {
     return {{{CLAMP(e_gamma.y + P3_CR * e_gamma.v),
@@ -121,20 +121,20 @@ Color P3_YUVToRGB(Color e_gamma) {
 // NOTE: BT.2100 transformations - according to ITU-R BT.2100-2
 
 // See ITU-R BT.2100-2, Table 5, HLG Reference OOTF
-static const double BT2100_R = 0.2627, BT2100_G = 0.677998, BT2100_B = 0.059302;
+static const float BT2100_R = 0.2627, BT2100_G = 0.677998, BT2100_B = 0.059302;
 
-double Bt2100Luminance(Color e) {
+float Bt2100Luminance(Color e) {
     return BT2100_R * e.r + BT2100_G * e.g + BT2100_B * e.b;
 }
 
 // See ITU-R BT.2100-2, Table 6, Derivation of colour difference signals.
 // BT.2100 uses the same coefficients for calculating luma signal and luminance,
 // so we reuse the luminance function here.
-static const double BT2100_CB = (2 * (1 - BT2100_B)),
-                    BT2100_CR = (2 * (1 - BT2100_R));
+static const float BT2100_CB = (2 * (1 - BT2100_B)),
+                   BT2100_CR = (2 * (1 - BT2100_R));
 
 Color Bt2100_RGBToYUV(Color e_gamma) {
-    double y_gamma = Bt2100Luminance(e_gamma);
+    float y_gamma = Bt2100Luminance(e_gamma);
     return {{{y_gamma, (e_gamma.b - y_gamma) / BT2100_CB,
               (e_gamma.r - y_gamma) / BT2100_CR}}};
 }
@@ -165,8 +165,8 @@ Color Bt2100_RGBToYUV(Color e_gamma) {
 // Coef for U = BT2100_B * BT2100_CB / BT2100_G = BT2100_GCB = ~0.1645
 // Coef for V = BT2100_R * BT2100_CR / BT2100_G = BT2100_GCR = ~0.5713
 
-static const double BT2100_GCB = BT2100_B * BT2100_CB / BT2100_G;
-static const double BT2100_GCR = BT2100_R * BT2100_CR / BT2100_G;
+static const float BT2100_GCB = BT2100_B * BT2100_CB / BT2100_G;
+static const float BT2100_GCR = BT2100_R * BT2100_CR / BT2100_G;
 
 Color Bt2100_YUVToRGB(Color e_gamma) {
     return {
@@ -176,9 +176,9 @@ Color Bt2100_YUVToRGB(Color e_gamma) {
 }
 
 // See ITU-R BT.2100-2, Table 5, HLG Reference OETF.
-static const double HLG_A = 0.17883277, HLG_B = 0.28466892, HLG_C = 0.55991073;
+static const float HLG_A = 0.17883277, HLG_B = 0.28466892, HLG_C = 0.55991073;
 
-double HLG_OETF(double e) {
+float HLG_OETF(float e) {
     if (e <= 1.0 / 12.0) {
         return sqrt(3.0 * e);
     } else {
@@ -190,13 +190,13 @@ Color HLG_OETF(Color e) {
     return {{{HLG_OETF(e.r), HLG_OETF(e.g), HLG_OETF(e.b)}}};
 }
 
-double HLG_OETFLUT(double e) {
+float HLG_OETFLUT(float e) {
     int32_t value = static_cast<int32_t>(e * (HLG_OETF_NUMENTRIES - 1) + 0.5);
     // TODO() : Remove once conversion modules have appropriate clamping in
     // place
     value = CLIP(value, 0, HLG_OETF_NUMENTRIES - 1);
     static LookUpTable kHlgLut(HLG_OETF_NUMENTRIES,
-                               static_cast<double (*)(double)>(HLG_OETF));
+                               static_cast<float (*)(float)>(HLG_OETF));
     return kHlgLut.getTable()[value];
 }
 
@@ -205,7 +205,7 @@ Color HLG_OETFLUT(Color e) {
 }
 
 // See ITU-R BT.2100-2, Table 5, HLG Reference EOTF.
-double HLG_InvOETF(double e_gamma) {
+float HLG_InvOETF(float e_gamma) {
     if (e_gamma <= 0.5) {
         return pow(e_gamma, 2.0) / 3.0;
     } else {
@@ -218,14 +218,14 @@ Color HLG_InvOETF(Color e_gamma) {
               HLG_InvOETF(e_gamma.b)}}};
 }
 
-double HLG_InvOETFLUT(double e_gamma) {
+float HLG_InvOETFLUT(float e_gamma) {
     int32_t value =
         static_cast<int32_t>(e_gamma * (HLG_INV_OETF_NUMENTRIES - 1) + 0.5);
     // TODO() : Remove once conversion modules have appropriate clamping in
     // place
     value = CLIP(value, 0, HLG_INV_OETF_NUMENTRIES - 1);
     static LookUpTable kHlgInvLut(HLG_INV_OETF_NUMENTRIES,
-                                  static_cast<double (*)(double)>(HLG_InvOETF));
+                                  static_cast<float (*)(float)>(HLG_InvOETF));
     return kHlgInvLut.getTable()[value];
 }
 
@@ -236,11 +236,11 @@ Color HLG_InvOETFLUT(Color e_gamma) {
 
 // See ITU-R BT.2100-2, Table 5, Note 5f
 // Gamma = 1.2 + 0.42 * log(kHlgMaxNits / 1000)
-static const double OOTF_GAMMA = 1.2;
+static const float OOTF_GAMMA = 1.2;
 
 // See ITU-R BT.2100-2, Table 5, HLG Reference OOTF
 Color HLG_OOTF(Color e, LuminanceFn luminance) {
-    double y = luminance(e);
+    float y = luminance(e);
     return e * std::pow(y, OOTF_GAMMA - 1.0);
 }
 
@@ -251,21 +251,21 @@ Color HLG_OOTFApprox(Color e, [[maybe_unused]] LuminanceFn luminance) {
 
 // See ITU-R BT.2100-2, Table 5, Note 5i
 Color HLG_InvOOTF(Color e, LuminanceFn luminance) {
-    double y = luminance(e);
+    float y = luminance(e);
     return e * std::pow(y, (1.0 / OOTF_GAMMA) - 1.0);
 }
 
-Color HLG_InvOOTFApprox(Color e) {
+Color HLG_InvOOTFApprox(Color e, [[maybe_unused]] LuminanceFn luminance) {
     return {{{std::pow(e.r, 1.0 / OOTF_GAMMA), std::pow(e.g, 1.0 / OOTF_GAMMA),
               std::pow(e.b, 1.0 / OOTF_GAMMA)}}};
 }
 
 // See ITU-R BT.2100-2, Table 4, Reference PQ OETF.
-static const double PQ_M1 = 2610.0 / 16384.0, PQ_M2 = 2523.0 / 4096.0 * 128.0;
-static const double PQ_C1 = 3424.0 / 4096.0, PQ_C2 = 2413.0 / 4096.0 * 32.0,
-                    PQ_C3 = 2392.0 / 4096.0 * 32.0;
+static const float PQ_M1 = 2610.0 / 16384.0, PQ_M2 = 2523.0 / 4096.0 * 128.0;
+static const float PQ_C1 = 3424.0 / 4096.0, PQ_C2 = 2413.0 / 4096.0 * 32.0,
+                   PQ_C3 = 2392.0 / 4096.0 * 32.0;
 
-double PQ_OETF(double e) {
+float PQ_OETF(float e) {
     if (e <= 0.0)
         return 0.0;
     return pow((PQ_C1 + PQ_C2 * pow(e, PQ_M1)) / (1 + PQ_C3 * pow(e, PQ_M1)),
@@ -276,13 +276,13 @@ Color PQ_OETF(Color e) {
     return {{{PQ_OETF(e.r), PQ_OETF(e.g), PQ_OETF(e.b)}}};
 }
 
-double PQ_OETFLUT(double e) {
+float PQ_OETFLUT(float e) {
     int32_t value = static_cast<int32_t>(e * (PQ_OETF_NUMENTRIES - 1) + 0.5);
     // TODO() : Remove once conversion modules have appropriate clamping in
     // place
     value = CLIP(value, 0, PQ_OETF_NUMENTRIES - 1);
     static LookUpTable kPqLut(PQ_OETF_NUMENTRIES,
-                              static_cast<double (*)(double)>(PQ_OETF));
+                              static_cast<float (*)(float)>(PQ_OETF));
     return kPqLut.getTable()[value];
 }
 
@@ -290,8 +290,8 @@ Color PQ_OETFLUT(Color e) {
     return {{{PQ_OETFLUT(e.r), PQ_OETFLUT(e.g), PQ_OETFLUT(e.b)}}};
 }
 
-double PQ_InvOETF(double e_gamma) {
-    double val = pow(e_gamma, (1 / PQ_M2));
+float PQ_InvOETF(float e_gamma) {
+    float val = pow(e_gamma, (1 / PQ_M2));
     return pow((((std::max)(val - PQ_C1, 0.0)) / (PQ_C2 - PQ_C3 * val)),
                1 / PQ_M1);
 }
@@ -301,14 +301,14 @@ Color PQ_InvOETF(Color e_gamma) {
               PQ_InvOETF(e_gamma.b)}}};
 }
 
-double PQ_InvOETFLUT(double e_gamma) {
+float PQ_InvOETFLUT(float e_gamma) {
     int32_t value =
         static_cast<int32_t>(e_gamma * (PQ_INV_OETF_NUMENTRIES - 1) + 0.5);
     // TODO() : Remove once conversion modules have appropriate clamping in
     // place
     value = CLIP(value, 0, PQ_INV_OETF_NUMENTRIES - 1);
     static LookUpTable kPqInvLut(PQ_INV_OETF_NUMENTRIES,
-                                 static_cast<double (*)(double)>(PQ_InvOETF));
+                                 static_cast<float (*)(float)>(PQ_InvOETF));
     return kPqInvLut.getTable()[value];
 }
 
@@ -438,8 +438,165 @@ Color YUV_Bt2100ToBt601(Color e) {
     return YUVColorGamutConversion(e, YUV_BT2100_TO_BT601);
 }
 
-double ApplyToneMapping(double x, ToneMapping mode, double target_nits = 100.0,
-                        double max_nits = 100.0) {
+////////////////////////////////////////////////////////////////////////////////
+// function selectors
+
+// TODO: confirm we always want to convert like this before calculating
+// luminance.
+ColorTransformFn GetGamutConversionFn(Gamut dst_gamut, Gamut src_gamut) {
+    switch (dst_gamut) {
+    case Gamut::BT709:
+        switch (src_gamut) {
+        case Gamut::BT709:
+            return IdentityConversion;
+        case Gamut::P3:
+            return P3ToBt709;
+        case Gamut::BT2100:
+            return Bt2100ToBt709;
+        }
+        break;
+    case Gamut::P3:
+        switch (src_gamut) {
+        case Gamut::BT709:
+            return Bt709ToP3;
+        case Gamut::P3:
+            return IdentityConversion;
+        case Gamut::BT2100:
+            return Bt2100ToP3;
+        }
+        break;
+    case Gamut::BT2100:
+        switch (src_gamut) {
+        case Gamut::BT709:
+            return Bt709ToBt2100;
+        case Gamut::P3:
+            return P3ToBt2100;
+        case Gamut::BT2100:
+            return IdentityConversion;
+        }
+        break;
+    }
+    return nullptr;
+}
+
+ColorTransformFn GetRGBToYUVFn(Gamut gamut) {
+    switch (gamut) {
+    case Gamut::BT709:
+        return sRGB_RGBToYUV;
+    case Gamut::P3:
+        return sRGB_RGBToYUV;
+    case Gamut::BT2100:
+        return Bt2100_RGBToYUV;
+    }
+    return nullptr;
+}
+
+ColorTransformFn GetYUVToRGBFn(Gamut gamut) {
+    switch (gamut) {
+    case Gamut::BT709:
+        return sRGB_YUVToRGB;
+    case Gamut::P3:
+        return P3_YUVToRGB;
+    case Gamut::BT2100:
+        return Bt2100_YUVToRGB;
+    }
+    return nullptr;
+}
+
+LuminanceFn GetLuminanceFn(Gamut gamut) {
+    switch (gamut) {
+    case Gamut::BT709:
+        return sRGBLuminance;
+    case Gamut::P3:
+        return P3Luminance;
+    case Gamut::BT2100:
+        return Bt2100Luminance;
+    }
+    return nullptr;
+}
+
+ColorTransformFn GetOETFFn(OETF transfer) {
+    switch (transfer) {
+    case OETF::LINEAR:
+        return IdentityConversion;
+    case OETF::HLG:
+#if USE_HLG_OETF_LUT
+        return HLG_OETFLUT;
+#else
+        return HLG_OETF;
+#endif
+    case OETF::PQ:
+#if USE_PQ_OETF_LUT
+        return PQ_OETFLUT;
+#else
+        return PQ_OETF;
+#endif
+    case OETF::SRGB:
+#if USE_SRGB_OETF_LUT
+        return sRGB_OETFLUT;
+#else
+        return sRGB_OETF;
+#endif
+    }
+    return nullptr;
+}
+
+ColorTransformFn GetInvOETFFn(OETF transfer) {
+    switch (transfer) {
+    case OETF::LINEAR:
+        return IdentityConversion;
+    case OETF::HLG:
+#if USE_HLG_INVOETF_LUT
+        return HLG_InvOETFLUT;
+#else
+        return HLG_InvOETF;
+#endif
+    case OETF::PQ:
+#if USE_PQ_INVOETF_LUT
+        return PQ_InvOETFLUT;
+#else
+        return PQ_InvOETF;
+#endif
+    case OETF::SRGB:
+#if USE_SRGB_INVOETF_LUT
+        return sRGB_InvOETFLUT;
+#else
+        return sRGB_InvOETF;
+#endif
+    }
+    return nullptr;
+}
+
+SceneToDisplayLuminanceFn GetOOTFFn(OETF transfer) {
+    switch (transfer) {
+    case OETF::LINEAR:
+        return IdentityOOTF;
+    case OETF::HLG:
+        return HLG_OOTFApprox;
+    case OETF::PQ:
+        return IdentityOOTF;
+    case OETF::SRGB:
+        return IdentityOOTF;
+    }
+    return nullptr;
+}
+
+float GetReferenceDisplayPeakLuminanceInNits(OETF transfer) {
+    switch (transfer) {
+    case OETF::LINEAR:
+        return PQ_MAX_NITS;
+    case OETF::HLG:
+        return HLG_MAX_NITS;
+    case OETF::PQ:
+        return PQ_MAX_NITS;
+    case OETF::SRGB:
+        return SDR_WHITE_NITS;
+    }
+    return -1.0f;
+}
+
+float ApplyToneMapping(float x, ToneMapping mode, float target_nits = 100.0,
+                       float max_nits = 100.0) {
     if (mode == ToneMapping::BASE) {
         x *= target_nits / max_nits;
     } else if (mode == ToneMapping::REINHARD) {
@@ -448,64 +605,64 @@ double ApplyToneMapping(double x, ToneMapping mode, double target_nits = 100.0,
         // REVISIT: 2.2
         x = std::pow(x, 1.0 / 2.2);
     } else if (mode == ToneMapping::FILMIC) {
-        const double A = 2.51;
-        const double B = 0.03;
-        const double C = 2.43;
-        const double D = 0.59;
-        const double E = 0.14;
+        const float A = 2.51;
+        const float B = 0.03;
+        const float C = 2.43;
+        const float D = 0.59;
+        const float E = 0.14;
         x = (x * (A * x + B)) / (x * (C * x + D) + E);
     } else if (mode == ToneMapping::ACES) {
-        const double a = 2.51;
-        const double b = 0.03;
-        const double c = 2.43;
-        const double d = 0.59;
-        const double e = 0.14;
+        const float a = 2.51;
+        const float b = 0.03;
+        const float c = 2.43;
+        const float d = 0.59;
+        const float e = 0.14;
         // REVISIT: Exposure adjustment for ACES
-        double adjusted = x * 0.6;
+        float adjusted = x * 0.6;
         x = (adjusted * (adjusted + b) * a) /
             (adjusted * (adjusted * c + d) + e);
     } else if (mode == ToneMapping::UNCHARTED2) {
-        const double A = 0.15;
-        const double B = 0.50;
-        const double C = 0.10;
-        const double D = 0.20;
-        const double E = 0.02;
-        const double F = 0.30;
-        const double W = 11.2;
+        const float A = 0.15;
+        const float B = 0.50;
+        const float C = 0.10;
+        const float D = 0.20;
+        const float E = 0.02;
+        const float F = 0.30;
+        const float W = 11.2;
 
-        auto uncharted2_tonemap = [=](double x) -> double {
+        auto uncharted2_tonemap = [=](float x) -> float {
             return ((x * (A * x + C * B) + D * E) / (x * (A * x + B) + D * F)) -
                    E / F;
         };
 
         x = uncharted2_tonemap(x) / uncharted2_tonemap(W);
     } else if (mode == ToneMapping::DRAGO) {
-        const double bias = 0.85;
-        const double Lwa = 1.0;
+        const float bias = 0.85;
+        const float Lwa = 1.0;
 
         x = std::log(1 + x) / std::log(1 + Lwa);
         x = std::pow(x, bias);
     } else if (mode == ToneMapping::LOTTES) {
-        const double a = 1.6;
+        const float a = 1.6;
 
-        const double mid_in = 0.18;
-        const double mid_out = 0.267;
+        const float mid_in = 0.18;
+        const float mid_out = 0.267;
 
-        const double t = x * a;
+        const float t = x * a;
         x = t / (t + 1);
 
-        const double z = (mid_in * a) / (mid_in * a + 1);
+        const float z = (mid_in * a) / (mid_in * a + 1);
         x = x * (mid_out / z);
     } else if (mode == ToneMapping::HABLE) {
-        const double A = 0.22; // Shoulder strength
-        const double B = 0.30; // Linear strength
-        const double C = 0.10; // Linear angle
-        const double D = 0.20; // Toe strength
-        const double E = 0.01; // Toe numerator
-        const double F = 0.30; // Toe denominator
-        const double W = 11.2;
+        const float A = 0.22; // Shoulder strength
+        const float B = 0.30; // Linear strength
+        const float C = 0.10; // Linear angle
+        const float D = 0.20; // Toe strength
+        const float E = 0.01; // Toe numerator
+        const float F = 0.30; // Toe denominator
+        const float W = 11.2;
 
-        std::function<double(double)> hable = [=](double x) -> double {
+        std::function<float(float)> hable = [=](float x) -> float {
             return (x * (A * x + C * B) + D * E) / (x * (A * x + B) + D * F) -
                    E / F;
         };
@@ -517,10 +674,11 @@ double ApplyToneMapping(double x, ToneMapping mode, double target_nits = 100.0,
     return x;
 }
 
-Color ApplyToneMapping(Color rgb, ToneMapping mode, double target_nits = 100.0,
-                       double max_nits = 100.0) {
+Color ApplyToneMapping(Color rgb, ToneMapping mode, float target_nits = 100.0,
+                       float max_nits = 100.0) {
     return {{{ApplyToneMapping(rgb.r, mode, target_nits, max_nits),
               ApplyToneMapping(rgb.g, mode, target_nits, max_nits),
               ApplyToneMapping(rgb.b, mode, target_nits, max_nits)}}};
 }
+
 } // namespace colorspace

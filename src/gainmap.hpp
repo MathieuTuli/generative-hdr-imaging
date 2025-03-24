@@ -2,14 +2,14 @@
 #define GAINMAP_CPP
 #include "imageops.hpp"
 namespace gainmap {
-std::unique_ptr<imageops::Image>
-ComputeGainMap(std::vector<double> hdr_yuv, std::vector<double> sdr_yuv,
-               double offset_hdr, double offset_sdr, double min_content_boost,
-               double max_content_boost, double map_gamma, utils::Error error);
+float ComputeGain(float hdr_y_nits, float sdr_y_nits, float hdr_offset,
+                  float sdr_offset);
+float AffineMapGain(float gainlog2, float min_gainlog2, float max_gainlog2,
+                      float gamma);
 
-std::unique_ptr<imageops::Image>
-HDRToGainMap(const std::unique_ptr<imageops::Image> &hdr_image,
-             double offset_hdr, double offset_sdr, double min_content_boost,
-             double max_content_boost, double map_gamma, utils::Error &error);
+void HDRToGainMap(const std::unique_ptr<imageops::Image> &hdr_image,
+                  float offset_hdr, float offset_sdr, float min_content_boost,
+                  float max_content_boost, float map_gamma,
+                  utils::Error &error);
 } // namespace gainmap
 #endif

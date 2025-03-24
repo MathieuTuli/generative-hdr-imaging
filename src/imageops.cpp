@@ -138,7 +138,7 @@ std::unique_ptr<Image> LoadHDRPNG(const std::string &filename,
 
     uint16_t min_val = UINT16_MAX;
     uint16_t max_val = 0;
-    double sum = 0.0;
+    float sum = 0.0;
     const size_t channels = 3;
     const size_t total_pixels = image->width * image->height * channels;
 
@@ -155,7 +155,7 @@ std::unique_ptr<Image> LoadHDRPNG(const std::string &filename,
         }
     }
 
-    double mean = sum / total_pixels;
+    float mean = sum / total_pixels;
 
     std::cout << "Image value range:" << std::endl;
     std::cout << "  Min: " << min_val << " (" << (min_val / 65535.0) << ")"
@@ -214,11 +214,11 @@ ImageMetadata ReadMetadata(const std::string &filename,
             }
             else if (name == "ColorPrimaries") {
                 if (value.find("2100") != std::string::npos || value.find("2020") != std::string::npos) {
-                    metadata.color_space = colorspace::ColorSpace::BT2100;
+                    metadata.gamut = colorspace::Gamut::BT2100;
                 } else if (value.find("P3") != std::string::npos || value.find("SMPTE") != std::string::npos) {
-                    metadata.color_space = colorspace::ColorSpace::BT709;
+                    metadata.gamut = colorspace::Gamut::BT709;
                 } else if (value.find("709") != std::string::npos || value.find("sRGB") != std::string::npos) {
-                    metadata.color_space = colorspace::ColorSpace::BT709;
+                    metadata.gamut = colorspace::Gamut::BT709;
                 } else {
                     error = {true, "Unknown color space: " + value};
                 }
@@ -295,7 +295,7 @@ bool WriteToPNG(const std::unique_ptr<Image> &image,
     return true;
 }
 
-bool WriteToNumpy(const std::vector<double> &data, int width, int height,
+bool WriteToNumpy(const std::vector<float> &data, int width, int height,
                   int channels, const std::string &dtype_str,
                   const std::string &output_path, utils::Error &error) {
 

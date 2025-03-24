@@ -21,3 +21,18 @@
         - YUV
         - tonemap
         - quantize
+
+## generate gain map from libultrahdr steps
+- first, convert both from RGB to YUV (which is YCbCr)
+- gets the InvOETF function for HDR image
+- gets the luminance function for HDR image
+- gets the OOTF function (i.e. if HLG, needs OOTF, identity otherwise)
+- gets the peak luminance based on colorspace for HDR image
+- if the sdr and hdr images are not the same color gamut
+    - get conversion to convert sdr to hdr
+    - only use SDR color gamut if it's bt2100 lol
+    - otherwise, cnovert to hdr's gamut (note that this won't convert to bt2100 like we might wanna do)
+- next it grabs the yuv to rgb function for the sdr image and hdr image
+- get the luminance function for sdr now  
+- it also gets the pixel sampler, but, for now I will handle that some other way
+- then we generate the map
