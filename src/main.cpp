@@ -1,6 +1,7 @@
 #include "gainmap.hpp"
 #include "imageops.hpp"
 #include "utils.h"
+#include <filesystem>
 #include <getopt.h>
 #include <iostream>
 #include <string>
@@ -15,7 +16,8 @@ void PrintUsage(const char *programName) {
         << "\nOptions:\n"
         << "  -u, --hdr2uhdr       Convert HDR to SDR + Gainmap\n"
         << "  -i, --input=FILE    Input image file\n"
-        << "  -o, --output=FILE   Output image file\n"
+        << "  -o, --output=STEM   Output file stem (without extension)\n"
+        << "  -d, --outdir=DIR    Output directory (default: current dir)\n"
         << "  -p, --percentile=N  Clip percentile for gainmap (default: 0.95)\n"
         << "  -h, --help          Display this help and exit\n"
         << "  -v, --version       Output version information and exit\n"
@@ -31,7 +33,8 @@ void PrintVersion(const char *programName) {
 
 int main(int argc, char *argv[]) {
     std::string input_file;
-    std::string output_file;
+    std::string output_dir = ".";
+    std::string output_stem;
     ConversionMode mode;
     bool mode_set = false;
     float clip_percentile = 0.95f;
@@ -40,7 +43,8 @@ int main(int argc, char *argv[]) {
         {"help", no_argument, 0, 'h'},
         {"version", no_argument, 0, 'v'},
         {"input", required_argument, 0, 'i'},
-        {"output", required_argument, 0, 'o'},
+        {"output", required_argument, 0, 'o'}, 
+        {"outdir", required_argument, 0, 'd'},
         {"hdr2raw", no_argument, 0, 'r'},
         {"hdr2sdr", no_argument, 0, 's'},
         {"percentile", required_argument, 0, 'p'},
@@ -49,7 +53,7 @@ int main(int argc, char *argv[]) {
     int option_index = 0;
     int c;
 
-    while ((c = getopt_long(argc, argv, "hvi:o:up:", long_options,
+    while ((c = getopt_long(argc, argv, "hvi:o:d:up:", long_options,
                             &option_index)) != -1) {
         switch (c) {
         case 'h':
@@ -62,7 +66,10 @@ int main(int argc, char *argv[]) {
             input_file = optarg;
             break;
         case 'o':
-            output_file = optarg;
+            output_stem = optarg;
+            break;
+        case 'd':
+            output_dir = optarg;
             break;
         case 'u':
             if (mode_set) {
@@ -98,10 +105,19 @@ int main(int argc, char *argv[]) {
         PrintUsage(argv[0]);
         return 1;
     }
-    if (output_file.empty()) {
-        std::cerr << "Error: Output file is required (--output/-o)\n";
+    if (output_stem.empty()) {
+        std::cerr << "Error: Output stem is required (--output/-o)\n";
         PrintUsage(argv[0]);
         return 1;
+    }
+
+    // Create output directory if it doesn't exist
+    std::filesystem::path dir_path(output_dir);
+    if (!std::filesystem::exists(dir_path)) {
+        if (!std::filesystem::create_directories(dir_path)) {
+            std::cerr << "Error: Failed to create output directory: " << output_dir << std::endl;
+            return 1;
+        }
     }
 
     utils::Error error;
@@ -136,7 +152,7 @@ int main(int argc, char *argv[]) {
         break;
     case ConversionMode::HDR_TO_UHDR:
         std::cout << "Converting HDR to SDR + Gainmap..." << std::endl;
-        gainmap::HDRToGainMap(hdr_image, clip_percentile, 1.0f, error);
+        gainmap::HDRToGainMap(hdr_image, clip_percentile, 1.0f, output_stem, output_dir, error);
         if (error.raise) {
             std::cerr << "Failed to convert to SDR + Gainmap: " << error.message
                       << std::endl;

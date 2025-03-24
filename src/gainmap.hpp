@@ -8,6 +8,8 @@ float AffineMapGain(float gainlog2, float min_gainlog2, float max_gainlog2,
                     float gamma);
 
 void HDRToGainMap(const std::unique_ptr<imageops::Image> &hdr_image,
-                  float clip_percentile, float map_gamma, utils::Error &error);
+                  float clip_percentile, float map_gamma,
+                  const std::string &file_stem, const std::string &output_dir,
+                  utils::Error &error);
 } // namespace gainmap
 #endif

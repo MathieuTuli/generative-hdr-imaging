@@ -47,7 +47,9 @@ float AffineMapGain(float gainlog2, float min_gainlog2, float max_gainlog2,
 // linear -> gamma (Bt100 HLG OETF)
 // gamma -> YUV [save]
 void HDRToGainMap(const std::unique_ptr<imageops::Image> &hdr_image,
-                  float clip_percentile, float map_gamma, utils::Error &error) {
+                  float clip_percentile, float map_gamma,
+                  const std::string &file_stem, const std::string &output_dir,
+                  utils::Error &error) {
     if (!hdr_image || !hdr_image->row_pointers) {
         error = {true, "Invalid input HDR image"};
         return;
@@ -240,7 +242,8 @@ void HDRToGainMap(const std::unique_ptr<imageops::Image> &hdr_image,
             hdr_linear_flat.push_back(color.g);
             hdr_linear_flat.push_back(color.b);
         }
-        npy::SaveArrayAsNumpy("hdr_linear.npy", fortran_order, 3, shape,
+        std::string hdr_linear_path = output_dir + "/" + file_stem + "_hdr_linear.npy";
+        npy::SaveArrayAsNumpy(hdr_linear_path, fortran_order, 3, shape,
                               hdr_linear_flat);
     }
 
@@ -273,7 +276,8 @@ void HDRToGainMap(const std::unique_ptr<imageops::Image> &hdr_image,
             }
         }
 
-        imageops::WriteToPNG(sdr_png, "sdr.png", error);
+        std::string sdr_path = output_dir + "/" + file_stem + "_sdr.png";
+        imageops::WriteToPNG(sdr_png, sdr_path, error);
         if (error.raise)
             return;
     }
@@ -282,7 +286,8 @@ void HDRToGainMap(const std::unique_ptr<imageops::Image> &hdr_image,
     {
         const size_t shape[] = {height, width, 1}; // Single channel
         bool fortran_order = false;
-        npy::SaveArrayAsNumpy("gainmap.npy", fortran_order, 3, shape, gainmap);
+        std::string gainmap_npy_path = output_dir + "/" + file_stem + "_gainmap.npy";
+        npy::SaveArrayAsNumpy(gainmap_npy_path, fortran_order, 3, shape, gainmap);
     }
 
     // Save affine gainmap as PNG
@@ -311,7 +316,8 @@ void HDRToGainMap(const std::unique_ptr<imageops::Image> &hdr_image,
             }
         }
 
-        imageops::WriteToPNG(gainmap_png, "gainmap.png", error);
+        std::string gainmap_png_path = output_dir + "/" + file_stem + "_gainmap.png";
+        imageops::WriteToPNG(gainmap_png, gainmap_png_path, error);
     }
 
     // Save metadata as JSON
@@ -328,7 +334,8 @@ void HDRToGainMap(const std::unique_ptr<imageops::Image> &hdr_image,
         metadata["hdr_capacity_max"] =
             hdr_peaknits / colorspace::SDR_WHITE_NITS;
 
-        std::ofstream metadata_file("metadata.json");
+        std::string metadata_path = output_dir + "/" + file_stem + "_metadata.json";
+        std::ofstream metadata_file(metadata_path);
         if (!metadata_file.is_open()) {
             error = {true, "Failed to open metadata.json for writing"};
             return;
