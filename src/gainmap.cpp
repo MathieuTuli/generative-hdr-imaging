@@ -527,7 +527,7 @@ void GainmapSdrToHDR(const std::unique_ptr<imageops::Image> &sdr_image,
             }
         }
 
-        std::string hdr_path = output_dir + "/" + file_stem + "_hdr.png";
+        std::string hdr_path = output_dir + "/" + file_stem + "_reconstructed_hdr.png";
         imageops::WriteToPNG(hdr_png, hdr_path, error);
         if (error.raise)
             return;
