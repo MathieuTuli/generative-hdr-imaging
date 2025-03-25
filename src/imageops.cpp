@@ -107,12 +107,13 @@ std::unique_ptr<Image> LoadHDRPNG(const std::string &filename,
 
     png_init_io(png, fp);
     png_read_info(png, info);
-    if (png_get_bit_depth(png, info) != 16) {
-        png_destroy_read_struct(&png, &info, nullptr);
-        fclose(fp);
-        error = {true, "Input png file is not 16-bit depth"};
-        return nullptr;
-    }
+    // DEPRECATE:
+    // if (png_get_bit_depth(png, info) != 16) {
+    //     png_destroy_read_struct(&png, &info, nullptr);
+    //     fclose(fp);
+    //     error = {true, "Input png file is not 16-bit depth"};
+    //     return nullptr;
+    // }
 
     std::unique_ptr<Image> image = std::make_unique<Image>();
 
@@ -135,18 +136,30 @@ std::unique_ptr<Image> LoadHDRPNG(const std::string &filename,
     }
     png_read_image(png, image->row_pointers);
 
-    uint16_t min_val = UINT16_MAX;
-    uint16_t max_val = 0;
-    float sum = 0.0;
+    uint32_t max_value = (1 << image->bit_depth) - 1;
+    uint32_t min_val = max_value;
+    uint32_t max_val = 0;
+    double sum = 0.0; // Using double for better precision with large sums
     const size_t channels = 3;
     const size_t total_pixels = image->width * image->height * channels;
+    const size_t bytes_per_sample =
+        (image->bit_depth + 7) / 8; // Round up to nearest byte
 
     for (size_t y = 0; y < image->height; y++) {
         png_bytep row = image->row_pointers[y];
         for (size_t x = 0; x < image->width; x++) {
             for (size_t c = 0; c < channels; c++) {
-                size_t idx = x * channels * 2 + c * 2; // *2 because 16-bit
-                uint16_t value = (row[idx] << 8) | row[idx + 1]; // big-endian
+                uint32_t value = 0;
+                size_t idx =
+                    x * channels * bytes_per_sample + c * bytes_per_sample;
+
+                // Read value based on bit depth
+                if (bytes_per_sample == 1) {
+                    value = row[idx];
+                } else if (bytes_per_sample == 2) {
+                    value = (row[idx] << 8) | row[idx + 1]; // big-endian
+                }
+
                 min_val = std::min(min_val, value);
                 max_val = std::max(max_val, value);
                 sum += value;
@@ -154,14 +167,16 @@ std::unique_ptr<Image> LoadHDRPNG(const std::string &filename,
         }
     }
 
-    float mean = sum / total_pixels;
+    double mean = sum / total_pixels;
+    double scale = 1.0 / max_value; // Normalize to [0,1] range
 
-    std::cout << "Image value range:" << std::endl;
-    std::cout << "  Min: " << min_val << " (" << (min_val / 65535.0) << ")"
+    std::cout << "Image value range (" << image->bit_depth
+              << "-bit):" << std::endl;
+    std::cout << "  Min: " << min_val << " (" << (min_val * scale) << ")"
               << std::endl;
-    std::cout << "  Max: " << max_val << " (" << (max_val / 65535.0) << ")"
+    std::cout << "  Max: " << max_val << " (" << (max_val * scale) << ")"
               << std::endl;
-    std::cout << "  Mean: " << mean << " (" << (mean / 65535.0) << ")"
+    std::cout << "  Mean: " << mean << " (" << (mean * scale) << ")"
               << std::endl;
 
     png_destroy_read_struct(&png, &info, nullptr);
@@ -187,6 +202,7 @@ ImageMetadata ReadMetadata(const std::string &filename, utils::Error &error) {
         return metadata;
     }
 
+    std::cout << "----------------------------------------" << std::endl;
     if (!info) {
         if (et->LastComplete() <= 0) {
             error = {true, "Error executing exiftool!"};
@@ -205,7 +221,8 @@ ImageMetadata ReadMetadata(const std::string &filename, utils::Error &error) {
                     metadata.oetf = colorspace::OETF::PQ;
                 } else if (value.find("2020") != std::string::npos) {
                     metadata.oetf = colorspace::OETF::HLG;
-                } else if (value.find("709") != std::string::npos) {
+                } else if (value.find("709") != std::string::npos ||
+                           value.find("sRGB") != std::string::npos) {
                     metadata.oetf = colorspace::OETF::SRGB;
                 } else {
                     error = {true, "Unknown transfer function: " + value};
@@ -228,6 +245,7 @@ ImageMetadata ReadMetadata(const std::string &filename, utils::Error &error) {
         }
         delete info;
     }
+    std::cout << "----------------------------------------" << std::endl;
     return metadata;
 }
 
@@ -270,10 +288,53 @@ bool WriteToPNG(const std::unique_ptr<Image> &image,
     png_init_io(png, fp);
 
     // Set to 8-bit depth, RGB format
-    png_set_IHDR(png, info, image->width, image->height, 8, image->color_type,
-                 PNG_INTERLACE_NONE, PNG_COMPRESSION_TYPE_DEFAULT,
-                 PNG_FILTER_TYPE_DEFAULT);
+    png_set_IHDR(png, info, image->width, image->height, image->bit_depth,
+                 image->color_type, PNG_INTERLACE_NONE,
+                 PNG_COMPRESSION_TYPE_DEFAULT, PNG_FILTER_TYPE_DEFAULT);
 
+    // Add color space and transfer function metadata as text chunks
+    std::string oetf_str, gamut_str;
+
+    switch (image->metadata.oetf) {
+    case colorspace::OETF::HLG:
+        oetf_str = "HLG";
+        break;
+    case colorspace::OETF::PQ:
+        oetf_str = "PQ";
+        break;
+    case colorspace::OETF::SRGB:
+        oetf_str = "sRGB";
+        break;
+    default:
+        oetf_str = "Unknown";
+    }
+
+    switch (image->metadata.gamut) {
+    case colorspace::Gamut::BT2100:
+        gamut_str = "BT.2100";
+        break;
+    case colorspace::Gamut::BT709:
+        gamut_str = "BT.709";
+        break;
+    default:
+        gamut_str = "Unknown";
+    }
+
+    std::string combined_oetf = gamut_str + " " + oetf_str;
+
+    // Create text chunks
+    png_text text[2];
+    text[0].compression = PNG_TEXT_COMPRESSION_NONE;
+    text[0].key = const_cast<char *>("TransferCharacteristics");
+    text[0].text = const_cast<char *>(combined_oetf.c_str());
+    text[0].text_length = combined_oetf.length();
+
+    text[1].compression = PNG_TEXT_COMPRESSION_NONE;
+    text[1].key = const_cast<char *>("ColorPrimaries");
+    text[1].text = const_cast<char *>(gamut_str.c_str());
+    text[1].text_length = gamut_str.length();
+
+    png_set_text(png, info, text, 2);
     png_write_info(png, info);
 
     if (!image->row_pointers) {
@@ -293,64 +354,6 @@ bool WriteToPNG(const std::unique_ptr<Image> &image,
 
     fclose(fp);
     png_destroy_write_struct(&png, &info);
-    return true;
-}
-
-bool WriteToNumpy(const std::vector<float> &data, int width, int height,
-                  int channels, const std::string &dtype_str,
-                  const std::string &output_path, utils::Error &error) {
-
-    if (data.size() != static_cast<size_t>(width * height * channels)) {
-        error = {true,
-                 "Error: Data size doesn't match the specified dimensions"};
-        return false;
-    }
-
-    std::vector<long unsigned> shape = {static_cast<long unsigned>(height),
-                                        static_cast<long unsigned>(width),
-                                        static_cast<long unsigned>(channels)};
-
-    try {
-        // Create the appropriate NumPy array based on dtype
-        if (dtype_str == "float64" || dtype_str == "float") {
-            // For float64, we can use the original data directly
-            npy::SaveArrayAsNumpy(output_path, false, shape.size(),
-                                  shape.data(), data);
-        } else if (dtype_str == "float32") {
-            // Convert to float32
-            std::vector<float> float_data(data.size());
-            for (size_t i = 0; i < data.size(); ++i) {
-                float_data[i] = static_cast<float>(data[i]);
-            }
-            npy::SaveArrayAsNumpy(output_path, false, shape.size(),
-                                  shape.data(), float_data);
-        } else if (dtype_str == "uint8") {
-            // Convert to uint8 with clamping
-            std::vector<uint8_t> uint8_data(data.size());
-            for (size_t i = 0; i < data.size(); ++i) {
-                // Clamp values between 0 and 255 for uint8
-                uint8_data[i] = static_cast<uint8_t>(
-                    std::max(0.0f, std::min(255.0f, data[i])));
-            }
-            npy::SaveArrayAsNumpy(output_path, false, shape.size(),
-                                  shape.data(), uint8_data);
-        } else if (dtype_str == "int32" || dtype_str == "int") {
-            // Convert to int32
-            std::vector<int32_t> int32_data(data.size());
-            for (size_t i = 0; i < data.size(); ++i) {
-                int32_data[i] = static_cast<int32_t>(data[i]);
-            }
-            npy::SaveArrayAsNumpy(output_path, false, shape.size(),
-                                  shape.data(), int32_data);
-        } else {
-            error = {true, "Error: Unsupported dtype: " + dtype_str};
-            return false;
-        }
-    } catch (const std::exception &e) {
-        error = {true, "Error: Exception occurred while saving NumPy array: " +
-                           std::string(e.what())};
-        return false;
-    }
     return true;
 }
 } // namespace imageops

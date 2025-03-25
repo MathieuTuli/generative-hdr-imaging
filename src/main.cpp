@@ -1,5 +1,6 @@
 #include "gainmap.hpp"
 #include "imageops.hpp"
+#include "npy.hpp"
 #include "utils.h"
 #include <filesystem>
 #include <getopt.h>
@@ -8,14 +9,17 @@
 
 #define PROGRAM_VERSION "1.0.0"
 
-enum class ConversionMode { HDR_TO_YUV, HDR_TO_SDR, HDR_TO_UHDR };
+enum class ConversionMode { HDR_TO_UHDR, UHDR_TO_HDR };
 
 void PrintUsage(const char *programName) {
     std::cout
         << "Usage: " << programName << " [OPTIONS]\n"
         << "\nOptions:\n"
         << "  -u, --hdr2uhdr       Convert HDR to SDR + Gainmap\n"
+        << "  -z, --uhdr2hdr       Convert SDR + Gainmap to HDR\n"
         << "  -i, --input=FILE    Input image file\n"
+        << "  -g, --gainmap=FILE  Gainmap file (required for uhdr2hdr)\n"
+        << "  -m, --metadata=FILE  Metadata JSON file (required for uhdr2hdr)\n"
         << "  -o, --output=STEM   Output file stem (without extension)\n"
         << "  -d, --outdir=DIR    Output directory (default: current dir)\n"
         << "  -p, --percentile=N  Clip percentile for gainmap (default: 0.95)\n"
@@ -33,6 +37,8 @@ void PrintVersion(const char *programName) {
 
 int main(int argc, char *argv[]) {
     std::string input_file;
+    std::string metadata_file;
+    std::string gainmap_file;
     std::string output_dir = ".";
     std::string output_stem;
     ConversionMode mode;
@@ -42,18 +48,20 @@ int main(int argc, char *argv[]) {
     static struct option long_options[] = {
         {"help", no_argument, 0, 'h'},
         {"version", no_argument, 0, 'v'},
+        {"metadata", required_argument, 0, 'm'},
         {"input", required_argument, 0, 'i'},
-        {"output", required_argument, 0, 'o'}, 
+        {"output", required_argument, 0, 'o'},
         {"outdir", required_argument, 0, 'd'},
         {"hdr2raw", no_argument, 0, 'r'},
         {"hdr2sdr", no_argument, 0, 's'},
         {"percentile", required_argument, 0, 'p'},
+        {"gainmap", required_argument, 0, 'm'},
         {0, 0, 0, 0}};
 
     int option_index = 0;
     int c;
 
-    while ((c = getopt_long(argc, argv, "hvi:o:d:up:", long_options,
+    while ((c = getopt_long(argc, argv, "hvi:o:d:zug:m:p:", long_options,
                             &option_index)) != -1) {
         switch (c) {
         case 'h':
@@ -79,6 +87,20 @@ int main(int argc, char *argv[]) {
             mode = ConversionMode::HDR_TO_UHDR;
             mode_set = true;
             break;
+        case 'z':
+            if (mode_set) {
+                std::cerr << "Error: Only one mode can be specified\n";
+                return 1;
+            }
+            mode = ConversionMode::UHDR_TO_HDR;
+            mode_set = true;
+            break;
+        case 'g':
+            gainmap_file = optarg;
+            break;
+        case 'm':
+            metadata_file = optarg;
+            break;
         case 'p':
             clip_percentile = std::stof(optarg);
             if (clip_percentile <= 0.0f || clip_percentile >= 1.0f) {
@@ -100,6 +122,13 @@ int main(int argc, char *argv[]) {
         PrintUsage(argv[0]);
         return 1;
     }
+
+    if (mode == ConversionMode::UHDR_TO_HDR && gainmap_file.empty() && metadata_file.empty()) {
+        std::cerr << "Error: Gainmap file is required for SDR to HDR "
+                     "conversion (--gainmap/-m)\n";
+        PrintUsage(argv[0]);
+        return 1;
+    }
     if (input_file.empty()) {
         std::cerr << "Error: Input file is required (--input/-i)\n";
         PrintUsage(argv[0]);
@@ -115,57 +144,78 @@ int main(int argc, char *argv[]) {
     std::filesystem::path dir_path(output_dir);
     if (!std::filesystem::exists(dir_path)) {
         if (!std::filesystem::create_directories(dir_path)) {
-            std::cerr << "Error: Failed to create output directory: " << output_dir << std::endl;
+            std::cerr << "Error: Failed to create output directory: "
+                      << output_dir << std::endl;
             return 1;
         }
     }
 
     utils::Error error;
     std::cout << "Loading image: " << input_file << std::endl;
-    std::unique_ptr<imageops::Image> hdr_image =
+    std::unique_ptr<imageops::Image> image =
         imageops::LoadImage(input_file, error);
     if (error.raise) {
         std::cerr << "Failed to load image: " << error.message << std::endl;
         return 1;
     }
 
-    std::unique_ptr<imageops::Image> output_image;
     switch (mode) {
-    case ConversionMode::HDR_TO_YUV:
-        std::cout << "Converting HDR to YUV..." << std::endl;
-        // TODO:
-        if (error.raise) {
-            std::cerr << "Failed to convert to SDR: " << error.message
-                      << std::endl;
-            return 1;
-        }
-        break;
+        case ConversionMode::HDR_TO_UHDR:
+            std::cout << "Converting HDR to SDR + Gainmap..." << std::endl;
+            gainmap::HDRToGainMap(image, clip_percentile, 1.0f, output_stem,
+                                  output_dir, error);
+            if (error.raise) {
+                std::cerr << "Failed to convert to SDR + Gainmap: "
+                          << error.message << std::endl;
+                return 1;
+            }
+            break;
+        case ConversionMode::UHDR_TO_HDR:
+            std::cout << "Converting SDR + Gainmap to HDR..." << std::endl;
 
-    case ConversionMode::HDR_TO_SDR:
-        std::cout << "Converting HDR to SDR..." << std::endl;
-        // TODO:
-        if (error.raise) {
-            std::cerr << "Failed to convert to SDR: " << error.message
-                      << std::endl;
-            return 1;
-        }
-        break;
-    case ConversionMode::HDR_TO_UHDR:
-        std::cout << "Converting HDR to SDR + Gainmap..." << std::endl;
-        gainmap::HDRToGainMap(hdr_image, clip_percentile, 1.0f, output_stem, output_dir, error);
-        if (error.raise) {
-            std::cerr << "Failed to convert to SDR + Gainmap: " << error.message
-                      << std::endl;
-            return 1;
-        }
-        break;
+            // Load the gainmap NPY file
+            std::vector<unsigned long> shape;
+            bool fortran_order;
+            std::vector<float> gainmap_data;
+
+            try {
+                npy::LoadArrayFromNumpy(gainmap_file, shape, fortran_order,
+                                        gainmap_data);
+
+                if (shape.size() != 3 || shape[2] != 1) {
+                    std::cerr << "Invalid gainmap shape. Expected [height, "
+                                 "width, 1], got [";
+                    for (size_t i = 0; i < shape.size(); ++i) {
+                        std::cerr << shape[i]
+                                  << (i < shape.size() - 1 ? ", " : "");
+                    }
+                    std::cerr << "]" << std::endl;
+                    return 1;
+                }
+
+                if (shape[0] != image->height || shape[1] != image->width) {
+                    std::cerr << "Gainmap dimensions (" << shape[1] << "x"
+                              << shape[0] << ") don't match input image ("
+                              << image->width << "x" << image->height << ")"
+                              << std::endl;
+                    return 1;
+                }
+            } catch (const std::runtime_error &e) {
+                std::cerr << "Failed to load gainmap NPY file: " << e.what()
+                          << std::endl;
+                return 1;
+            }
+
+            gainmap::GainmapSdrToHDR(image, gainmap_data, metadata_file,
+                                     output_stem, output_dir, error);
+            if (error.raise) {
+                std::cerr << "Failed to convert SDR + Gainmap to HDR: "
+                          << error.message << std::endl;
+                return 1;
+            }
+
+            break;
     }
-
-    // std::cout << "Saving output image: " << output_file << std::endl;
-    // if (!imageops::WriteToPNG(output_image, output_file, error)) {
-    //     std::cerr << "Failed to save image: " << error.message << std::endl;
-    //     return 1;
-    // }
 
     std::cout << "Conversion completed successfully!" << std::endl;
     return 0;

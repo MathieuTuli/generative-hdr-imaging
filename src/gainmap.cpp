@@ -21,12 +21,24 @@ float ComputeGain(float hdr_y_nits, float sdr_y_nits,
 }
 
 float AffineMapGain(float gainlog2, float min_gainlog2, float max_gainlog2,
-                    float gamma) {
+                    float map_gamma) {
     float mapped_val =
         (gainlog2 - min_gainlog2) / (max_gainlog2 - min_gainlog2);
-    if (gamma != 1.0f)
-        mapped_val = pow(mapped_val, gamma);
+    if (map_gamma != 1.0f)
+        mapped_val = pow(mapped_val, map_gamma);
     return mapped_val;
+}
+
+colorspace::Color ApplyGain(colorspace::Color e, float gain, float map_gamma,
+                            float min_content_boost, float max_content_boost,
+                            float hdr_offset = 0.015625,
+                            float sdr_offset = 0.015625f) {
+    if (map_gamma != 1.0f)
+        gain = pow(gain, 1.0f / map_gamma);
+    float log_boost = log2(min_content_boost) * (1.0f - gain) +
+                      log2(max_content_boost) * gain;
+    float gain_factor = exp2(log_boost);
+    return ((e + sdr_offset) * gain_factor) - hdr_offset;
 }
 
 // The pipeline is as follows:
@@ -242,9 +254,18 @@ void HDRToGainMap(const std::unique_ptr<imageops::Image> &hdr_image,
             hdr_linear_flat.push_back(color.g);
             hdr_linear_flat.push_back(color.b);
         }
-        std::string hdr_linear_path = output_dir + "/" + file_stem + "_hdr_linear.npy";
+        std::string hdr_linear_path =
+            output_dir + "/" + file_stem + "_hdr_linear.npy";
         npy::SaveArrayAsNumpy(hdr_linear_path, fortran_order, 3, shape,
                               hdr_linear_flat);
+    }
+
+    // Save input HDR image as PNG
+    {
+        std::string hdr_path = output_dir + "/" + file_stem + "_input_hdr.png";
+        imageops::WriteToPNG(hdr_image, hdr_path, error);
+        if (error.raise)
+            return;
     }
 
     // Save SDR image as PNG
@@ -256,6 +277,9 @@ void HDRToGainMap(const std::unique_ptr<imageops::Image> &hdr_image,
         sdr_png->bit_depth = 8;
         sdr_png->color_type = PNG_COLOR_TYPE_RGB;
         sdr_png->channels = channels;
+        sdr_png->metadata = hdr_image->metadata;
+        sdr_png->metadata.oetf = colorspace::OETF::SRGB;
+        sdr_png->metadata.gamut = colorspace::Gamut::BT709;
 
         // Allocate row pointers
         sdr_png->row_pointers = (png_bytep *)malloc(sizeof(png_bytep) * height);
@@ -286,8 +310,10 @@ void HDRToGainMap(const std::unique_ptr<imageops::Image> &hdr_image,
     {
         const size_t shape[] = {height, width, 1}; // Single channel
         bool fortran_order = false;
-        std::string gainmap_npy_path = output_dir + "/" + file_stem + "_gainmap.npy";
-        npy::SaveArrayAsNumpy(gainmap_npy_path, fortran_order, 3, shape, gainmap);
+        std::string gainmap_npy_path =
+            output_dir + "/" + file_stem + "_gainmap.npy";
+        npy::SaveArrayAsNumpy(gainmap_npy_path, fortran_order, 3, shape,
+                              gainmap);
     }
 
     // Save affine gainmap as PNG
@@ -316,31 +342,195 @@ void HDRToGainMap(const std::unique_ptr<imageops::Image> &hdr_image,
             }
         }
 
-        std::string gainmap_png_path = output_dir + "/" + file_stem + "_gainmap.png";
+        std::string gainmap_png_path =
+            output_dir + "/" + file_stem + "_gainmap.png";
         imageops::WriteToPNG(gainmap_png, gainmap_png_path, error);
     }
 
     // Save metadata as JSON
     {
         nlohmann::json metadata;
-        metadata["max_gain_log2"] = max_gain;
-        metadata["max_gain_exp2"] = exp2(max_gain);
-        metadata["min_gain_log2"] = min_gain;
-        metadata["min_gain_exp2"] = exp2(min_gain);
+        metadata["max_gain"] = max_gain;
+        metadata["max_content_boost"] = exp2(max_gain);
+        metadata["min_gain"] = min_gain;
+        metadata["min_content_boost"] = exp2(min_gain);
         metadata["map_gamma"] = map_gamma;
         metadata["hdr_offset"] = 0.015625f;
         metadata["sdr_offset"] = 0.015625f;
-        metadata["hdr_capacity_min"] = 1.0f;
+        metadata["clip_percentile"] = clip_percentile;
+        metadata["hdr_capacity_min"] = log2(1.0f);
         metadata["hdr_capacity_max"] =
             hdr_peaknits / colorspace::SDR_WHITE_NITS;
 
-        std::string metadata_path = output_dir + "/" + file_stem + "_metadata.json";
+        std::string metadata_path =
+            output_dir + "/" + file_stem + "_metadata.json";
         std::ofstream metadata_file(metadata_path);
         if (!metadata_file.is_open()) {
             error = {true, "Failed to open metadata.json for writing"};
             return;
         }
         metadata_file << std::setw(4) << metadata << std::endl;
+    }
+}
+
+// Steps
+// - load sRGB sdr image, quantized
+// - load gainmap, floating values, before quantization
+// - inv tonemap (CURRENTLY NOT DOING)
+// - inv srgb oetf to get linear sRGB
+// -
+void GainmapSdrToHDR(const std::unique_ptr<imageops::Image> &sdr_image,
+                     const std::vector<float> gainmap,
+                     const std::string &metadata, const std::string &file_stem,
+                     const std::string &output_dir, utils::Error &error) {
+    if (!sdr_image || !sdr_image->row_pointers) {
+        error = {true, "Invalid input SDR image"};
+        return;
+    }
+
+    std::ifstream metadata_file(metadata);
+    if (!metadata_file.is_open()) {
+        error = {true, "Failed to open metadata file: " + metadata};
+        return;
+    }
+
+    nlohmann::json json_metadata;
+    try {
+        metadata_file >> json_metadata;
+    } catch (const nlohmann::json::exception &e) {
+        error = {true,
+                 "Failed to parse metadata JSON: " + std::string(e.what())};
+        return;
+    }
+
+    try {
+        sdr_image->metadata.clip_percentile =
+            json_metadata["clip_percentile"].get<float>();
+        sdr_image->metadata.hdr_offset =
+            json_metadata["hdr_offset"].get<float>();
+        sdr_image->metadata.sdr_offset =
+            json_metadata["sdr_offset"].get<float>();
+        sdr_image->metadata.map_gamma = json_metadata["map_gamma"].get<float>();
+        sdr_image->metadata.hdr_capacity_min =
+            json_metadata["hdr_capacity_min"].get<float>();
+        sdr_image->metadata.hdr_capacity_max =
+            json_metadata["hdr_capacity_max"].get<float>();
+        sdr_image->metadata.min_content_boost =
+            json_metadata["min_content_boost"].get<float>();
+        sdr_image->metadata.max_content_boost =
+            json_metadata["max_content_boost"].get<float>();
+    } catch (const nlohmann::json::exception &e) {
+        error = {true, "Failed to read required fields from metadata: " +
+                           std::string(e.what())};
+        return;
+    }
+
+    colorspace::ColorTransformFn sdr_gammut_conv =
+        colorspace::GetGamutConversionFn(colorspace::Gamut::BT2100,
+                                         sdr_image->metadata.gamut);
+
+    const size_t channels = 3;
+    std::vector<colorspace::Color> hdr_image;
+    for (size_t y = 0; y < sdr_image->height; y++) {
+        png_bytep hdr_row = sdr_image->row_pointers[y];
+        for (size_t x = 0; x < sdr_image->width; x++) {
+
+            colorspace::Color sdr_rgb_gamma;
+            // round up to nearest byte
+            size_t bytes_per_channel = (sdr_image->bit_depth + 7) / 8;
+            size_t idx = x * channels * bytes_per_channel;
+
+            // read values based on bit depth
+            uint32_t r_value = 0, g_value = 0, b_value = 0;
+            if (bytes_per_channel == 1) {
+                // 8-bit values
+                r_value = hdr_row[idx];
+                g_value = hdr_row[idx + 1];
+                b_value = hdr_row[idx + 2];
+            } else if (bytes_per_channel == 2) {
+                // 10-bit, 12-bit, or 16-bit values stored in 2 bytes
+                r_value = (hdr_row[idx] << 8) | hdr_row[idx + 1];
+                g_value = (hdr_row[idx + 2] << 8) | hdr_row[idx + 3];
+                b_value = (hdr_row[idx + 4] << 8) | hdr_row[idx + 5];
+            }
+
+            // create a mask for the actual bit depth
+            uint32_t max_value = (1 << sdr_image->bit_depth) - 1;
+
+            // mask and normalize to [0, 1]
+            sdr_rgb_gamma.r =
+                static_cast<float>(r_value & max_value) / max_value;
+            sdr_rgb_gamma.g =
+                static_cast<float>(g_value & max_value) / max_value;
+            sdr_rgb_gamma.b =
+                static_cast<float>(b_value & max_value) / max_value;
+
+            colorspace::Color sdr_rgb = colorspace::sRGB_InvOETF(sdr_rgb_gamma);
+            sdr_rgb = sdr_gammut_conv(sdr_rgb);
+
+            colorspace::Color hdr_rgb = ApplyGain(
+                sdr_rgb, gainmap[y * sdr_image->width + x],
+                sdr_image->metadata.map_gamma,
+                sdr_image->metadata.min_content_boost,
+                sdr_image->metadata.max_content_boost,
+                sdr_image->metadata.hdr_offset, sdr_image->metadata.sdr_offset);
+
+            hdr_rgb =
+                hdr_rgb * colorspace::SDR_WHITE_NITS / colorspace::HLG_MAX_NITS;
+            hdr_rgb = Clamp(hdr_rgb);
+            hdr_rgb = colorspace::HLG_InvOOTFApprox(hdr_rgb);
+            colorspace::Color hdr_rgb_gamma = colorspace::HLG_OETF(hdr_rgb);
+            hdr_image.push_back(hdr_rgb_gamma);
+        }
+    }
+
+    // save hdr image as 16-bit png
+    {
+        std::unique_ptr<imageops::Image> hdr_png =
+            std::make_unique<imageops::Image>();
+        hdr_png->width = sdr_image->width;
+        hdr_png->height = sdr_image->height;
+        hdr_png->bit_depth = 16;
+        hdr_png->color_type = PNG_COLOR_TYPE_RGB;
+        hdr_png->channels = channels;
+        hdr_png->metadata = sdr_image->metadata;
+        hdr_png->metadata.gamut = colorspace::Gamut::BT2100;
+        hdr_png->metadata.oetf = colorspace::OETF::HLG;
+
+        // Allocate row pointers for 16-bit data
+        hdr_png->row_pointers =
+            (png_bytep *)malloc(sizeof(png_bytep) * hdr_png->height);
+        for (size_t y = 0; y < hdr_png->height; y++) {
+            hdr_png->row_pointers[y] = (png_byte *)malloc(
+                hdr_png->width * channels * 2); // 2 bytes per channel
+        }
+
+        // Fill pixel data - convert float [0,1] to 16-bit integers
+        for (size_t y = 0; y < hdr_png->height; y++) {
+            png_bytep row = hdr_png->row_pointers[y];
+            for (size_t x = 0; x < hdr_png->width; x++) {
+                const auto &color = hdr_image[y * hdr_png->width + x];
+                size_t pixel_idx = x * channels * 2; // 2 bytes per channel
+
+                // Convert [0,1] float to 16-bit value and split into bytes
+                uint16_t r = static_cast<uint16_t>(color.r * 65535.0f);
+                uint16_t g = static_cast<uint16_t>(color.g * 65535.0f);
+                uint16_t b = static_cast<uint16_t>(color.b * 65535.0f);
+
+                // Store in big-endian format
+                row[pixel_idx] = (r >> 8) & 0xFF;
+                row[pixel_idx + 1] = r & 0xFF;
+                row[pixel_idx + 2] = (g >> 8) & 0xFF;
+                row[pixel_idx + 3] = g & 0xFF;
+                row[pixel_idx + 4] = (b >> 8) & 0xFF;
+                row[pixel_idx + 5] = b & 0xFF;
+            }
+        }
+
+        std::string hdr_path = output_dir + "/" + file_stem + "_hdr.png";
+        imageops::WriteToPNG(hdr_png, hdr_path, error);
+        if (error.raise)
+            return;
     }
 }
 } // namespace gainmap

@@ -88,6 +88,7 @@ Color sRGB_OETF(Color e) {
 }
 
 // NOTE: Display-P3 transformations
+// REVISIT: 601
 
 // See SMPTE EG 432-1, Equation G-7.
 static const float P3_R = 0.2289746f, P3_G = 0.6917385f, P3_B = 0.0792869f;
@@ -255,7 +256,7 @@ Color HLG_InvOOTF(Color e, LuminanceFn luminance) {
     return e * std::pow(y, (1.0 / OOTF_GAMMA) - 1.0);
 }
 
-Color HLG_InvOOTFApprox(Color e, [[maybe_unused]] LuminanceFn luminance) {
+Color HLG_InvOOTFApprox(Color e) {
     return {{{std::pow(e.r, 1.0f / OOTF_GAMMA), std::pow(e.g, 1.0f / OOTF_GAMMA),
               std::pow(e.b, 1.0f / OOTF_GAMMA)}}};
 }

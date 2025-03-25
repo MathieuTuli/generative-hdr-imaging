@@ -195,7 +195,7 @@ Color HLG_InvOETFLUT(Color e_gamma);
 Color HLG_OOTF(Color e, LuminanceFn luminance);
 Color HLG_OOTFApprox(Color e, [[maybe_unused]] LuminanceFn luminance);
 Color HLG_InvOOTF(Color e, LuminanceFn luminance);
-Color HLG_InvOOTFApprox(Color e, [[maybe_unused]] LuminanceFn luminance);
+Color HLG_InvOOTFApprox(Color e);
 // pq
 float PQ_OETF(float e);
 Color PQ_OETF(Color e);

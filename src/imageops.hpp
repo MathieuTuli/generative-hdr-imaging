@@ -17,13 +17,14 @@ namespace imageops {
 struct ImageMetadata {
     colorspace::Gamut gamut;
     colorspace::OETF oetf;
-    float clip_low{0.0};
-    float clip_high{1.0};
-    float offset_hdr{0.015625};
-    float offset_sdr{0.015625};
-    float min_content_boost{1.0};
-    float max_content_boost{4.0};
-    float map_gamma{1.0};
+    float clip_percentile{1.0f};
+    float hdr_offset{0.015625f};
+    float sdr_offset{0.015625f};
+    float min_content_boost{1.0f};
+    float max_content_boost{4.0f};
+    float map_gamma{1.0f};
+    float hdr_capacity_min{1.0f};
+    float hdr_capacity_max{4.0f};
 };
 
 struct Image {
