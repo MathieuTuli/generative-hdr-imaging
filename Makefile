@@ -39,53 +39,53 @@ endif
 # -- dependencies
 ifeq ($(UNAME_S), Linux) #LINUX
 	# OpenGL and GLFW first
-	LIBS += -lGL $(shell pkg-config --static --libs glfw3)
-	CXXFLAGS += $(shell pkg-config --cflags glfw3)
+	# LIBS += -lGL $(shell pkg-config --static --libs glfw3)
+	# CXXFLAGS += $(shell pkg-config --cflags glfw3)
 	
 	# GTK
-	CXXFLAGS += $(shell pkg-config --cflags --libs gtk+-3.0)
+	# CXXFLAGS += $(shell pkg-config --cflags --libs gtk+-3.0)
 	
 	# OpenBLAS and LAPACK dependencies
-	LIBS += -lopenblas -llapack -lgfortran -lquadmath
+	# LIBS += -lopenblas -llapack -lgfortran -lquadmath
 	
 	# OpenCV last since it might depend on BLAS/LAPACK
-	LIBS += $(shell pkg-config --libs opencv4)
-	CXXFLAGS += $(shell pkg-config --cflags opencv4)
+	# LIBS += $(shell pkg-config --libs opencv4)
+	# CXXFLAGS += $(shell pkg-config --cflags opencv4)
 
 	# catch2
 	LIBS += $(shell pkg-config --libs catch2-with-main)
 	CXXFLAGS += $(shell pkg-config --cflags catch2-with-main)
 
-	# catch2
+	# lipng
 	LIBS += $(shell pkg-config --libs libpng)
 	CXXFLAGS += $(shell pkg-config --cflags libpng)
 endif
 
 ifeq ($(UNAME_S), Darwin) #APPLE
 	# imgui
-	CXXFLAGS += -fno-omit-frame-pointer
+	# CXXFLAGS += -fno-omit-frame-pointer
 
-	LIBS += -framework OpenGL -framework Cocoa -framework IOKit -framework CoreVideo
-	LIBS += -lglfw
-	LIBS += -L /opt/homebrew/opt/ffmpeg/lib -lavformat -lpostproc -lavcodec -lswscale -lavfilter -lavutil -lswresample -lavdevice
-	LIBS += -framework AppKit -framework UniformTypeIdentifiers
-	# LIBS += -lglfw3
-	LIBS += $(shell pkg-config --libs opencv4)
-	CXXFLAGS += $(shell pkg-config --cflags opencv4)
+	# LIBS += -framework OpenGL -framework Cocoa -framework IOKit -framework CoreVideo
+	# LIBS += -lglfw
+	# LIBS += -L /opt/homebrew/opt/ffmpeg/lib -lavformat -lpostproc -lavcodec -lswscale -lavfilter -lavutil -lswresample -lavdevice
+	# LIBS += -framework AppKit -framework UniformTypeIdentifiers
+	# # LIBS += -lglfw3
+	# LIBS += $(shell pkg-config --libs opencv4)
+	# CXXFLAGS += $(shell pkg-config --cflags opencv4)
 
 	# catch2
 	LIBS += $(shell pkg-config --libs catch2-with-main)
 	CXXFLAGS += $(shell pkg-config --cflags catch2-with-main)
 
-	# catch2
+	# libpng
 	LIBS += $(shell pkg-config --libs libpng)
 	CXXFLAGS += $(shell pkg-config --cflags libpng)
 endif
 
-IMGUI_DIR := $(DEPS_DIR)/imgui
-SRCS += $(IMGUI_DIR)/backends/imgui_impl_glfw.cpp $(IMGUI_DIR)/backends/imgui_impl_opengl3.cpp
-SRCS += $(IMGUI_DIR)/imgui.cpp $(IMGUI_DIR)/imgui_demo.cpp $(IMGUI_DIR)/imgui_draw.cpp $(IMGUI_DIR)/imgui_tables.cpp $(IMGUI_DIR)/imgui_widgets.cpp
-CXXFLAGS += -I$(IMGUI_DIR) -I$(IMGUI_DIR)/backends
+# IMGUI_DIR := $(DEPS_DIR)/imgui
+# SRCS += $(IMGUI_DIR)/backends/imgui_impl_glfw.cpp $(IMGUI_DIR)/backends/imgui_impl_opengl3.cpp
+# SRCS += $(IMGUI_DIR)/imgui.cpp $(IMGUI_DIR)/imgui_demo.cpp $(IMGUI_DIR)/imgui_draw.cpp $(IMGUI_DIR)/imgui_tables.cpp $(IMGUI_DIR)/imgui_widgets.cpp
+# CXXFLAGS += -I$(IMGUI_DIR) -I$(IMGUI_DIR)/backends
 
 EXIF_DIR := $(DEPS_DIR)/exiftool
 SRCS += $(shell find $(EXIF_DIR)/src -name '*.cpp' -or -name '*.c')
