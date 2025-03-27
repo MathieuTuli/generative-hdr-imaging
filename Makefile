@@ -56,7 +56,7 @@ ifeq ($(UNAME_S), Linux) #LINUX
 	LIBS += $(shell pkg-config --libs catch2-with-main)
 	CXXFLAGS += $(shell pkg-config --cflags catch2-with-main)
 
-	# lipng
+	# libpng
 	LIBS += $(shell pkg-config --libs libpng)
 	CXXFLAGS += $(shell pkg-config --cflags libpng)
 endif

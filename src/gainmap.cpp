@@ -4,7 +4,7 @@
 #include <cmath>
 #include <fstream>
 #include <iostream>
-#include <nlohmann/json.hpp>
+#include <json.hpp>
 
 namespace gainmap {
 float ComputeGain(float hdr_y_nits, float sdr_y_nits,
@@ -132,9 +132,17 @@ void HDRToGainMap(const std::unique_ptr<imageops::Image> &hdr_image,
                 b_value = hdr_row[idx + 2];
             } else if (bytes_per_channel == 2) {
                 // 10-bit, 12-bit, or 16-bit values stored in 2 bytes
-                r_value = (hdr_row[idx] << 8) | hdr_row[idx + 1];
-                g_value = (hdr_row[idx + 2] << 8) | hdr_row[idx + 3];
-                b_value = (hdr_row[idx + 4] << 8) | hdr_row[idx + 5];
+#if defined(__LITTLE_ENDIAN__) || (defined(__BYTE_ORDER) && __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__)
+                    // little-endian
+                    r_value = (hdr_row[idx] << 8) | hdr_row[idx];
+                    g_value = (hdr_row[idx + 2] << 8) | hdr_row[idx + 2];
+                    b_value = (hdr_row[idx + 4] << 8) | hdr_row[idx + 4];
+#else
+                    // big-endian
+                    r_value = (hdr_row[idx] << 8) | hdr_row[idx + 1];
+                    g_value = (hdr_row[idx + 2] << 8) | hdr_row[idx + 3];
+                    b_value = (hdr_row[idx + 4] << 8) | hdr_row[idx + 5];
+#endif
             }
 
             // create a mask for the actual bit depth
@@ -517,6 +525,15 @@ void GainmapSdrToHDR(const std::unique_ptr<imageops::Image> &sdr_image,
                 uint16_t g = static_cast<uint16_t>(color.g * 65535.0f);
                 uint16_t b = static_cast<uint16_t>(color.b * 65535.0f);
 
+#if defined(__LITTLE_ENDIAN__) || (defined(__BYTE_ORDER) && __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__)
+                // Store in little-endian format
+                row[pixel_idx] = r & 0xFF;
+                row[pixel_idx + 1] = (r >> 8) & 0xFF;
+                row[pixel_idx + 2] = g & 0xFF;
+                row[pixel_idx + 3] = (g >> 8) & 0xFF;
+                row[pixel_idx + 4] = b & 0xFF;
+                row[pixel_idx + 5] = (b >> 8) & 0xFF;
+#else
                 // Store in big-endian format
                 row[pixel_idx] = (r >> 8) & 0xFF;
                 row[pixel_idx + 1] = r & 0xFF;
@@ -524,6 +541,7 @@ void GainmapSdrToHDR(const std::unique_ptr<imageops::Image> &sdr_image,
                 row[pixel_idx + 3] = g & 0xFF;
                 row[pixel_idx + 4] = (b >> 8) & 0xFF;
                 row[pixel_idx + 5] = b & 0xFF;
+#endif
             }
         }
 
