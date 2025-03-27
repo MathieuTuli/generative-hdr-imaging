@@ -173,9 +173,11 @@ void HDRToGainMap(const std::unique_ptr<imageops::Image> &hdr_image,
     std::cout << "HDR " << clip_percentile
               << "th-percentile clip value: " << clip_value << std::endl;
 
+    std::vector<float> sdr_values0;
     std::vector<float> sdr_values1;
     std::vector<float> sdr_values2;
     std::vector<float> sdr_values3;
+    sdr_values0.reserve(width * height * channels);
     sdr_values1.reserve(width * height * channels);
     sdr_values2.reserve(width * height * channels);
     sdr_values3.reserve(width * height * channels);
@@ -189,6 +191,10 @@ void HDRToGainMap(const std::unique_ptr<imageops::Image> &hdr_image,
         sdr_rgb.g = std::min(sdr_rgb.g, clip_value) / clip_value;
         sdr_rgb.b = std::min(sdr_rgb.b, clip_value) / clip_value;
 
+        sdr_values0.push_back(sdr_rgb.r);
+        sdr_values0.push_back(sdr_rgb.g);
+        sdr_values0.push_back(sdr_rgb.b);
+
         colorspace::Color srgb_gamma = sdr_oetf(sdr_rgb);
         // TODO: apply tone map
         sdr_image.push_back(srgb_gamma);
@@ -200,6 +206,7 @@ void HDRToGainMap(const std::unique_ptr<imageops::Image> &hdr_image,
         srgb_gamma.r = static_cast<float>(r) / 255.f;
         srgb_gamma.g = static_cast<float>(g) / 255.f;
         srgb_gamma.b = static_cast<float>(b) / 255.f;
+
         sdr_values1.push_back(srgb_gamma.r);
         sdr_values1.push_back(srgb_gamma.g);
         sdr_values1.push_back(srgb_gamma.b);
@@ -228,12 +235,15 @@ void HDRToGainMap(const std::unique_ptr<imageops::Image> &hdr_image,
         max_gain = std::max(gain, max_gain);
         gainmap.push_back(gain);
     }
+    float average0 = std::accumulate(sdr_values0.begin(), sdr_values0.end(), 0.0) /
+                    sdr_values0.size();
     float average1 = std::accumulate(sdr_values1.begin(), sdr_values1.end(), 0.0) /
                     sdr_values1.size();
     float average2 = std::accumulate(sdr_values2.begin(), sdr_values2.end(), 0.0) /
                     sdr_values2.size();
     float average3 = std::accumulate(sdr_values3.begin(), sdr_values3.end(), 0.0) /
                     sdr_values3.size();
+    std::cout << "The average0 is " << average0<< std::endl;
     std::cout << "The average1 is " << average1<< std::endl;
     std::cout << "The average2 is " << average2<< std::endl;
     std::cout << "The average3 is " << average3<< std::endl;
