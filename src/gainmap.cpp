@@ -9,23 +9,93 @@
 namespace gainmap {
 float ComputeGain(float hdr_y_nits, float sdr_y_nits,
                   float hdr_offset = 0.015625f, float sdr_offset = 0.015625f) {
-    float gain = log2((hdr_y_nits + hdr_offset) / (sdr_y_nits + sdr_offset));
+    // Debug counter to track major outliers
+    static int debug_count = 0;
+    static float min_recorded_gain = 1000.0f;
+    static float max_recorded_gain = -1000.0f;
+    
+    float numerator = hdr_y_nits + hdr_offset;
+    float denominator = sdr_y_nits + sdr_offset;
+    float ratio = numerator / denominator;
+    float gain = log2(ratio);
+    
+    // Debug outliers that might be causing issues
+    if (debug_count < 10) {
+        if (gain < -10.0f || gain > 10.0f || std::isnan(gain) || std::isinf(gain)) {
+            std::cout << "DEBUG (gain outlier): hdr_y_nits=" << hdr_y_nits 
+                      << ", sdr_y_nits=" << sdr_y_nits 
+                      << ", ratio=" << ratio
+                      << ", gain=" << gain << std::endl;
+            debug_count++;
+        }
+    }
+    
+    // Track min/max gains for debugging
+    if (gain < min_recorded_gain && !std::isnan(gain) && !std::isinf(gain)) {
+        min_recorded_gain = gain;
+        std::cout << "DEBUG: New minimum gain: " << min_recorded_gain 
+                  << " (hdr_y=" << hdr_y_nits << ", sdr_y=" << sdr_y_nits << ")" << std::endl;
+    }
+    if (gain > max_recorded_gain && !std::isnan(gain) && !std::isinf(gain)) {
+        max_recorded_gain = gain;
+        std::cout << "DEBUG: New maximum gain: " << max_recorded_gain
+                  << " (hdr_y=" << hdr_y_nits << ", sdr_y=" << sdr_y_nits << ")" << std::endl;
+    }
+    
     if (sdr_y_nits < 2.f / 255.0f) {
         // If sdr is zero and hdr is non zero, it can result in very large gain
         // values. In compression - decompression process, if the same sdr pixel
         // increases to 1, the hdr recovered pixel will blow out. Dont allow
         // dark pixels to signal large gains.
+        float old_gain = gain;
         gain = (std::min)(gain, 2.3f);
+        
+        if (old_gain != gain && debug_count < 10) {
+            std::cout << "DEBUG (dark pixel gain clamped): " << old_gain << " -> " << gain << std::endl;
+            debug_count++;
+        }
     }
+    
+    // Safety check against numerical issues
+    if (std::isnan(gain) || std::isinf(gain)) {
+        std::cout << "WARNING: Invalid gain value detected! Using fallback value 0.0" << std::endl;
+        return 0.0f;
+    }
+    
     return gain;
 }
 
 float AffineMapGain(float gainlog2, float min_gainlog2, float max_gainlog2,
                     float map_gamma) {
-    float mapped_val =
-        (gainlog2 - min_gainlog2) / (max_gainlog2 - min_gainlog2);
+    // Use double precision for critical calculation
+    double gain_d = static_cast<double>(gainlog2);
+    double min_d = static_cast<double>(min_gainlog2);
+    double max_d = static_cast<double>(max_gainlog2);
+    double range_d = max_d - min_d;
+    
+    // Verify we don't divide by a very small number
+    if (fabs(range_d) < 1.0e-8) {
+        std::cout << "WARNING: Very small range in AffineMapGain, using fallback" << std::endl;
+        return 0.5f;  // Return middle value as fallback
+    }
+    
+    double mapped_val_d = (gain_d - min_d) / range_d;
+    
+    // Handle edge cases
+    if (mapped_val_d < 0.0) {
+        std::cout << "DEBUG (AffineMapGain): Clamping negative mapped value to 0" << std::endl;
+        mapped_val_d = 0.0;
+    }
+    if (mapped_val_d > 1.0) {
+        std::cout << "DEBUG (AffineMapGain): Clamping mapped value > 1 to 1" << std::endl;
+        mapped_val_d = 1.0;
+    }
+    
+    float mapped_val = static_cast<float>(mapped_val_d);
+    
     if (map_gamma != 1.0f)
         mapped_val = pow(mapped_val, map_gamma);
+    
     return mapped_val;
 }
 
@@ -218,8 +288,27 @@ void HDRToGainMap(const std::unique_ptr<imageops::Image> &hdr_image,
             bt2100_luminance_fn(sdr_rgb_bt2100) * colorspace::SDR_WHITE_NITS;
         hdr_y_nits = bt2100_luminance_fn(hdr_rgb) * hdr_peaknits;
         float gain = ComputeGain(hdr_y_nits, sdr_y_nits);
-        min_gain = std::min(gain, min_gain);
-        max_gain = std::max(gain, max_gain);
+        
+        // Add explicit check for NaN/Inf values
+        if (std::isnan(gain) || std::isinf(gain)) {
+            std::cout << "DEBUG: Skipping invalid gain value at (" << x << "," << y << ")" << std::endl;
+            continue;
+        }
+        
+        // Debug when min_gain gets updated
+        if (gain < min_gain) {
+            std::cout << "DEBUG: Updating min_gain: " << min_gain << " -> " << gain 
+                      << " at position (" << x << "," << y << ")" << std::endl;
+            min_gain = gain;
+        }
+        
+        // Debug when max_gain gets updated
+        if (gain > max_gain) {
+            std::cout << "DEBUG: Updating max_gain: " << max_gain << " -> " << gain
+                      << " at position (" << x << "," << y << ")" << std::endl;  
+            max_gain = gain;
+        }
+        
         gainmap.push_back(gain);
     }
     std::cout << "Gainmap computed." << std::endl;
@@ -230,16 +319,55 @@ void HDRToGainMap(const std::unique_ptr<imageops::Image> &hdr_image,
     // from sdr pels. Allowing further excursion might not offer any benefit and
     // on the downside can cause bigger error during affine map and inverse
     // affine map.
+    std::cout << "DEBUG: Before clamp, min_gain=" << min_gain << ", max_gain=" << max_gain << std::endl;
+    
+    float original_min = min_gain;
+    float original_max = max_gain;
+    
     min_gain = (std::clamp)(min_gain, -14.3f, 15.6f);
     max_gain = (std::clamp)(max_gain, -14.3f, 15.6f);
+    
+    if (original_min != min_gain || original_max != max_gain) {
+        std::cout << "DEBUG: After clamp: min_gain " << original_min << " -> " << min_gain 
+                  << ", max_gain " << original_max << " -> " << max_gain << std::endl;
+    }
 
     // TODO: if min/max content boost are given
     float min_content_boost = 1.0f;
-    float max_content_boost = hdr_peaknits / colorspace::SDR_WHITE_NITS;
+    
+    // Use explicit double precision for this critical calculation
+    double hdr_peak_d = static_cast<double>(hdr_peaknits);
+    double sdr_white_d = static_cast<double>(colorspace::SDR_WHITE_NITS);
+    double max_boost_d = hdr_peak_d / sdr_white_d;
+    
+    // Convert back to float with rounding to nearest
+    float max_content_boost = static_cast<float>(max_boost_d);
+    
+    std::cout << "DEBUG: Content boost range: min=" << min_content_boost 
+              << ", max=" << max_content_boost
+              << " (hdr_peaknits=" << hdr_peaknits 
+              << ", SDR_WHITE_NITS=" << colorspace::SDR_WHITE_NITS << ")" << std::endl;
+    
+    // Use additional precision checks
+    if (std::isnan(max_content_boost) || std::isinf(max_content_boost)) {
+        std::cout << "WARNING: Invalid max_content_boost - using fallback value of 4.0" << std::endl;
+        max_content_boost = 4.0f;  // Standard fallback for HDR10
+    }
+    
+    original_min = min_gain;
+    original_max = max_gain;
+    
     min_gain = std::min(min_gain, min_content_boost);
     max_gain = std::max(max_gain, max_content_boost);
+    
+    if (original_min != min_gain || original_max != max_gain) {
+        std::cout << "DEBUG: After content boost adjust: min_gain " << original_min << " -> " << min_gain 
+                  << ", max_gain " << original_max << " -> " << max_gain << std::endl;
+    }
+    
     if (fabs(max_gain - min_gain) < 1.0e-8) {
         max_gain += 0.1f; // to avoid div by zero during affine transform
+        std::cout << "DEBUG: Applied div-by-zero protection: max_gain += 0.1" << std::endl;
     }
     std::cout << "Max/min gain (log2): " << max_gain << "/" << min_gain
               << std::endl;
