@@ -107,14 +107,6 @@ std::unique_ptr<Image> LoadHDRPNG(const std::string &filename,
 
     png_init_io(png, fp);
     png_read_info(png, info);
-    
-    // Apply consistent transformations
-    if (png_get_bit_depth(png, info) == 16) {
-        // Tell libpng to preserve 16-bit depth and handle it as native-endian
-        // This is important for consistent behavior across platforms
-        png_set_swap(png);
-        std::cout << "DEBUG: Applied png_set_swap for 16-bit depth" << std::endl;
-    }
     // DEPRECATE:
     // if (png_get_bit_depth(png, info) != 16) {
     //     png_destroy_read_struct(&png, &info, nullptr);
@@ -130,15 +122,6 @@ std::unique_ptr<Image> LoadHDRPNG(const std::string &filename,
     image->color_type = png_get_color_type(png, info);
     image->bit_depth = png_get_bit_depth(png, info);
     image->bytes_per_row = png_get_rowbytes(png, info);
-
-    // Debug image info
-    std::cout << "DEBUG: PNG properties:" << std::endl;
-    std::cout << "  Width: " << image->width << std::endl;
-    std::cout << "  Height: " << image->height << std::endl;
-    std::cout << "  Color type: " << image->color_type << std::endl;
-    std::cout << "  Bit depth: " << image->bit_depth << std::endl;
-    std::cout << "  Bytes per row: " << image->bytes_per_row << std::endl;
-    std::cout << "  Bytes per pixel: " << (image->bytes_per_row / image->width) << std::endl;
 
     png_read_update_info(png, info);
     image->metadata = ReadMetadata(filename, error);
@@ -174,17 +157,9 @@ std::unique_ptr<Image> LoadHDRPNG(const std::string &filename,
                 if (bytes_per_sample == 1) {
                     value = row[idx];
                 } else if (bytes_per_sample == 2) {
-                    // Since we've used png_set_swap, libpng has already
-                    // handled the endianness for us - read the value directly as a uint16_t
-                    value = *reinterpret_cast<uint16_t*>(&row[idx]);
-                    
-                    // Debug: Print sample values to diagnose issues
-                    if (y == 0 && x < 5) {
-                        std::cout << "DEBUG: Raw bytes at (" << x << ",0): " 
-                                  << std::hex << static_cast<int>(row[idx]) << " " 
-                                  << static_cast<int>(row[idx+1]) << std::dec 
-                                  << " -> value: " << value << std::endl;
-                    }
+                    // PNG stores 16-bit values in big-endian (network byte order)
+                    // regardless of the host's endianness
+                    value = (row[idx] << 8) | row[idx + 1]; 
                 }
 
                 min_val = std::min(min_val, value);
@@ -318,12 +293,6 @@ bool WriteToPNG(const std::unique_ptr<Image> &image,
     png_set_IHDR(png, info, image->width, image->height, image->bit_depth,
                  image->color_type, PNG_INTERLACE_NONE,
                  PNG_COMPRESSION_TYPE_DEFAULT, PNG_FILTER_TYPE_DEFAULT);
-                 
-    // Apply swap transform if 16-bit to handle endianness consistently
-    if (image->bit_depth == 16) {
-        png_set_swap(png);
-        std::cout << "DEBUG (writing): Applied png_set_swap for 16-bit output" << std::endl;
-    }
 
     // Add color space and transfer function metadata as text chunks
     std::string oetf_str, gamut_str;

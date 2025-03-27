@@ -132,22 +132,11 @@ void HDRToGainMap(const std::unique_ptr<imageops::Image> &hdr_image,
                 b_value = hdr_row[idx + 2];
             } else if (bytes_per_channel == 2) {
                 // 10-bit, 12-bit, or 16-bit values stored in 2 bytes
-                // Since we've used png_set_swap in imageops.cpp, libpng has already
-                // handled the endianness for us - read values directly as uint16_t
-                r_value = *reinterpret_cast<uint16_t*>(&hdr_row[idx]);
-                g_value = *reinterpret_cast<uint16_t*>(&hdr_row[idx + 2]);
-                b_value = *reinterpret_cast<uint16_t*>(&hdr_row[idx + 4]);
-                
-                // Debug: Print sample values to diagnose issues
-                if (y == 0 && x < 3) {
-                    std::cout << "DEBUG (gainmap): Raw bytes at (" << x << ",0): RGB = [" 
-                              << std::hex 
-                              << static_cast<int>(hdr_row[idx]) << " " << static_cast<int>(hdr_row[idx+1]) << ", "
-                              << static_cast<int>(hdr_row[idx+2]) << " " << static_cast<int>(hdr_row[idx+3]) << ", "
-                              << static_cast<int>(hdr_row[idx+4]) << " " << static_cast<int>(hdr_row[idx+5]) 
-                              << std::dec << "]" << std::endl;
-                    std::cout << "   -> RGB values: " << r_value << ", " << g_value << ", " << b_value << std::endl;
-                }
+                // PNG stores 16-bit values in big-endian (network byte order)
+                // regardless of the host's endianness
+                r_value = (hdr_row[idx] << 8) | hdr_row[idx + 1];
+                g_value = (hdr_row[idx + 2] << 8) | hdr_row[idx + 3];
+                b_value = (hdr_row[idx + 4] << 8) | hdr_row[idx + 5];
             }
 
             // create a mask for the actual bit depth
@@ -530,23 +519,14 @@ void GainmapSdrToHDR(const std::unique_ptr<imageops::Image> &sdr_image,
                 uint16_t g = static_cast<uint16_t>(color.g * 65535.0f);
                 uint16_t b = static_cast<uint16_t>(color.b * 65535.0f);
 
-                // Let libpng handle the endianness - store as native 16-bit values
-                // using direct assignment which the png_set_swap will handle correctly
-                *reinterpret_cast<uint16_t*>(&row[pixel_idx]) = r;
-                *reinterpret_cast<uint16_t*>(&row[pixel_idx + 2]) = g;
-                *reinterpret_cast<uint16_t*>(&row[pixel_idx + 4]) = b;
-                
-                // Debug values
-                if (y < 1 && x < 2) {
-                    std::cout << "DEBUG (writing): RGB values at (" << x << "," << y << "): " 
-                              << r << ", " << g << ", " << b << std::endl;
-                    std::cout << "  Raw bytes: " 
-                              << std::hex 
-                              << static_cast<int>(row[pixel_idx]) << " " << static_cast<int>(row[pixel_idx+1]) << ", "
-                              << static_cast<int>(row[pixel_idx+2]) << " " << static_cast<int>(row[pixel_idx+3]) << ", "
-                              << static_cast<int>(row[pixel_idx+4]) << " " << static_cast<int>(row[pixel_idx+5]) 
-                              << std::dec << std::endl;
-                }
+                // PNG requires 16-bit values to be stored in big-endian (network byte order)
+                // regardless of the host's endianness
+                row[pixel_idx] = (r >> 8) & 0xFF;     // MSB
+                row[pixel_idx + 1] = r & 0xFF;        // LSB
+                row[pixel_idx + 2] = (g >> 8) & 0xFF; // MSB
+                row[pixel_idx + 3] = g & 0xFF;        // LSB
+                row[pixel_idx + 4] = (b >> 8) & 0xFF; // MSB
+                row[pixel_idx + 5] = b & 0xFF;        // LSB
             }
         }
 
