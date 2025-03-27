@@ -132,7 +132,7 @@ void HDRToGainMap(const std::unique_ptr<imageops::Image> &hdr_image,
                 b_value = hdr_row[idx + 2];
             } else if (bytes_per_channel == 2) {
                 // 10-bit, 12-bit, or 16-bit values stored in 2 bytes
-#if defined(__LITTLE_ENDIAN__) || (defined(__BYTE_ORDER) && __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__)
+#if defined(__LITTLE_ENDIAN__) || (defined(__BYTE_ORDER__) && __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__)
                     // little-endian
                     r_value = (hdr_row[idx] << 8) | hdr_row[idx];
                     g_value = (hdr_row[idx + 2] << 8) | hdr_row[idx + 2];
@@ -525,7 +525,7 @@ void GainmapSdrToHDR(const std::unique_ptr<imageops::Image> &sdr_image,
                 uint16_t g = static_cast<uint16_t>(color.g * 65535.0f);
                 uint16_t b = static_cast<uint16_t>(color.b * 65535.0f);
 
-#if defined(__LITTLE_ENDIAN__) || (defined(__BYTE_ORDER) && __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__)
+#if defined(__LITTLE_ENDIAN__) || (defined(__BYTE_ORDER__) && __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__)
                 // Store in little-endian format
                 row[pixel_idx] = r & 0xFF;
                 row[pixel_idx + 1] = (r >> 8) & 0xFF;

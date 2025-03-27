@@ -13,39 +13,46 @@ enum class ConversionMode { HDR_TO_UHDR, UHDR_TO_HDR };
 enum class InputMode { SINGLE_FILE, DIRECTORY };
 
 // Helper function to get the stem of a filepath
-std::string GetStem(const std::string& filepath) {
+std::string GetStem(const std::string &filepath) {
     std::filesystem::path path(filepath);
     return path.stem().string();
 }
 
 // Process a single HDR to UHDR conversion
-bool ProcessHdrToUhdr(const std::string& input_file, const std::string& output_stem,
-                     const std::string& output_dir, float clip_percentile) {
+bool ProcessHdrToUhdr(const std::string &input_file,
+                      const std::string &output_stem,
+                      const std::string &output_dir, float clip_percentile) {
     utils::Error error;
     std::cout << "Processing: " << input_file << std::endl;
-    
-    std::unique_ptr<imageops::Image> image = imageops::LoadImage(input_file, error);
+
+    std::unique_ptr<imageops::Image> image =
+        imageops::LoadImage(input_file, error);
     if (error.raise) {
         std::cerr << "Failed to load image: " << error.message << std::endl;
         return false;
     }
 
-    gainmap::HDRToGainMap(image, clip_percentile, 1.0f, output_stem, output_dir, error);
+    gainmap::HDRToGainMap(image, clip_percentile, 1.0f, output_stem, output_dir,
+                          error);
     if (error.raise) {
-        std::cerr << "Failed to convert to SDR + Gainmap: " << error.message << std::endl;
+        std::cerr << "Failed to convert to SDR + Gainmap: " << error.message
+                  << std::endl;
         return false;
     }
     return true;
 }
 
 // Process a single UHDR to HDR conversion
-bool ProcessUhdrToHdr(const std::string& input_file, const std::string& gainmap_file,
-                     const std::string& metadata_file, const std::string& output_stem,
-                     const std::string& output_dir) {
+bool ProcessUhdrToHdr(const std::string &input_file,
+                      const std::string &gainmap_file,
+                      const std::string &metadata_file,
+                      const std::string &output_stem,
+                      const std::string &output_dir) {
     utils::Error error;
     std::cout << "Processing: " << input_file << std::endl;
-    
-    std::unique_ptr<imageops::Image> image = imageops::LoadImage(input_file, error);
+
+    std::unique_ptr<imageops::Image> image =
+        imageops::LoadImage(input_file, error);
     if (error.raise) {
         std::cerr << "Failed to load image: " << error.message << std::endl;
         return false;
@@ -57,10 +64,12 @@ bool ProcessUhdrToHdr(const std::string& input_file, const std::string& gainmap_
     std::vector<float> gainmap_data;
 
     try {
-        npy::LoadArrayFromNumpy(gainmap_file, shape, fortran_order, gainmap_data);
+        npy::LoadArrayFromNumpy(gainmap_file, shape, fortran_order,
+                                gainmap_data);
 
         if (shape.size() != 3 || shape[2] != 1) {
-            std::cerr << "Invalid gainmap shape. Expected [height, width, 1], got [";
+            std::cerr
+                << "Invalid gainmap shape. Expected [height, width, 1], got [";
             for (size_t i = 0; i < shape.size(); ++i) {
                 std::cerr << shape[i] << (i < shape.size() - 1 ? ", " : "");
             }
@@ -74,15 +83,17 @@ bool ProcessUhdrToHdr(const std::string& input_file, const std::string& gainmap_
                       << image->height << ")" << std::endl;
             return false;
         }
-    } catch (const std::runtime_error& e) {
-        std::cerr << "Failed to load gainmap NPY file: " << e.what() << std::endl;
+    } catch (const std::runtime_error &e) {
+        std::cerr << "Failed to load gainmap NPY file: " << e.what()
+                  << std::endl;
         return false;
     }
 
     gainmap::GainmapSdrToHDR(image, gainmap_data, metadata_file, output_stem,
-                            output_dir, error);
+                             output_dir, error);
     if (error.raise) {
-        std::cerr << "Failed to convert SDR + Gainmap to HDR: " << error.message << std::endl;
+        std::cerr << "Failed to convert SDR + Gainmap to HDR: " << error.message
+                  << std::endl;
         return false;
     }
     return true;
@@ -97,7 +108,8 @@ void PrintUsage(const char *programName) {
         << "  -i, --input=PATH    Input image file or directory\n"
         << "  -g, --gainmap=FILE  Gainmap file (required for uhdr2hdr)\n"
         << "  -m, --metadata=FILE  Metadata JSON file (required for uhdr2hdr)\n"
-        << "  -o, --output=STEM   Output file stem (only used with single file input)\n"
+        << "  -o, --output=STEM   Output file stem (only used with single file "
+           "input)\n"
         << "  -d, --outdir=DIR    Output directory (default: current dir)\n"
         << "  -p, --percentile=N  Clip percentile for gainmap (default: 0.95)\n"
         << "  -h, --help          Display this help and exit\n"
@@ -141,6 +153,29 @@ int main(int argc, char *argv[]) {
 
     int option_index = 0;
     int c;
+
+#ifdef __LITTLE_ENDIAN__
+    std::cout << "__LITTLE_ENDIAN__ is defined" << std::endl;
+    ;
+    std::cout << "__LITTLE_ENDIAN__ = " << __LITTLE_ENDIAN__ << std::endl;
+#else
+    std::cout << "__LITTLE_ENDIAN__ is not defined" << std::endl;
+#endif
+
+#ifdef __BYTE_ORDER__
+    std::cout << "__BYTE_ORDER__ is defined" << std::endl;
+    std::cout << "__BYTE_ORDER__ = " << __BYTE_ORDER__ << std::endl;
+#else
+    std::cout << "__BYTE_ORDER__ is not defined" << std::endl;
+#endif
+
+#ifdef __ORDER_LITTLE_ENDIAN__
+    std::cout << "__ORDER_LITTLE_ENDIAN__ is defined" << std::endl;
+    std::cout << "__ORDER_LITTLE_ENDIAN__ = " << __ORDER_LITTLE_ENDIAN__
+              << std::endl;
+#else
+    std::cout << "__ORDER_LITTLE_ENDIAN__ is not defined" << std::endl;
+#endif
 
     while ((c = getopt_long(argc, argv, "hvi:o:d:zug:m:p:", long_options,
                             &option_index)) != -1) {
@@ -204,7 +239,8 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
-    if (mode == ConversionMode::UHDR_TO_HDR && gainmap_file.empty() && metadata_file.empty()) {
+    if (mode == ConversionMode::UHDR_TO_HDR && gainmap_file.empty() &&
+        metadata_file.empty()) {
         std::cerr << "Error: Gainmap file is required for SDR to HDR "
                      "conversion (--gainmap/-m)\n";
         PrintUsage(argv[0]);
@@ -219,14 +255,18 @@ int main(int argc, char *argv[]) {
     // Determine if input is a file or directory
     std::filesystem::path input_fs_path(input_path);
     if (!std::filesystem::exists(input_fs_path)) {
-        std::cerr << "Error: Input path does not exist: " << input_path << std::endl;
+        std::cerr << "Error: Input path does not exist: " << input_path
+                  << std::endl;
         return 1;
     }
 
-    input_mode = std::filesystem::is_directory(input_fs_path) ? InputMode::DIRECTORY : InputMode::SINGLE_FILE;
+    input_mode = std::filesystem::is_directory(input_fs_path)
+                     ? InputMode::DIRECTORY
+                     : InputMode::SINGLE_FILE;
 
     if (input_mode == InputMode::SINGLE_FILE && output_stem.empty()) {
-        std::cerr << "Error: Output stem is required for single file mode (--output/-o)\n";
+        std::cerr << "Error: Output stem is required for single file mode "
+                     "(--output/-o)\n";
         PrintUsage(argv[0]);
         return 1;
     }
@@ -244,9 +284,11 @@ int main(int argc, char *argv[]) {
     if (input_mode == InputMode::SINGLE_FILE) {
         bool success = false;
         if (mode == ConversionMode::HDR_TO_UHDR) {
-            success = ProcessHdrToUhdr(input_path, output_stem, output_dir, clip_percentile);
+            success = ProcessHdrToUhdr(input_path, output_stem, output_dir,
+                                       clip_percentile);
         } else {
-            success = ProcessUhdrToHdr(input_path, gainmap_file, metadata_file, output_stem, output_dir);
+            success = ProcessUhdrToHdr(input_path, gainmap_file, metadata_file,
+                                       output_stem, output_dir);
         }
         if (!success) {
             return 1;
@@ -257,37 +299,46 @@ int main(int argc, char *argv[]) {
         int processed = 0;
         int failed = 0;
 
-        for (const auto& entry : std::filesystem::directory_iterator(input_path)) {
-            if (!entry.is_regular_file()) continue;
+        for (const auto &entry :
+             std::filesystem::directory_iterator(input_path)) {
+            if (!entry.is_regular_file())
+                continue;
 
             std::string current_file = entry.path().string();
             std::string current_stem = GetStem(current_file);
-            
+
             // Skip non-image files and metadata/gainmap files
             std::string ext = entry.path().extension().string();
-            if (ext != ".exr" && ext != ".hdr" && ext != ".png" && ext != ".jpg" && ext != ".jpeg") {
+            if (ext != ".exr" && ext != ".hdr" && ext != ".png" &&
+                ext != ".jpg" && ext != ".jpeg") {
                 continue;
             }
 
-
             bool success = false;
             if (mode == ConversionMode::HDR_TO_UHDR) {
-                success = ProcessHdrToUhdr(current_file, current_stem, output_dir, clip_percentile);
+                success = ProcessHdrToUhdr(current_file, current_stem,
+                                           output_dir, clip_percentile);
             } else {
                 // For UHDR_TO_HDR mode, construct gainmap and metadata paths
-                std::string current_gainmap = std::filesystem::path(current_file).parent_path().string() + 
-                                            "/" + current_stem + "_gainmap.npy";
-                std::string current_metadata = std::filesystem::path(current_file).parent_path().string() + 
-                                             "/" + current_stem + "_metadata.json";
-                
-                if (!std::filesystem::exists(current_gainmap) || !std::filesystem::exists(current_metadata)) {
-                    std::cerr << "Skipping " << current_file << ": Missing gainmap or metadata files" << std::endl;
+                std::string current_gainmap =
+                    std::filesystem::path(current_file).parent_path().string() +
+                    "/" + current_stem + "_gainmap.npy";
+                std::string current_metadata =
+                    std::filesystem::path(current_file).parent_path().string() +
+                    "/" + current_stem + "_metadata.json";
+
+                if (!std::filesystem::exists(current_gainmap) ||
+                    !std::filesystem::exists(current_metadata)) {
+                    std::cerr << "Skipping " << current_file
+                              << ": Missing gainmap or metadata files"
+                              << std::endl;
                     failed++;
                     continue;
                 }
-                
-                success = ProcessUhdrToHdr(current_file, current_gainmap, current_metadata, 
-                                         current_stem, output_dir);
+
+                success = ProcessUhdrToHdr(current_file, current_gainmap,
+                                           current_metadata, current_stem,
+                                           output_dir);
             }
 
             if (success) {
@@ -300,7 +351,7 @@ int main(int argc, char *argv[]) {
         std::cout << "\nBatch processing completed:\n"
                   << "Successfully processed: " << processed << " files\n"
                   << "Failed: " << failed << " files\n";
-        
+
         if (processed == 0) {
             std::cerr << "No valid images found in directory" << std::endl;
             return 1;
