@@ -173,8 +173,6 @@ void HDRToGainMap(const std::unique_ptr<imageops::Image> &hdr_image,
     std::cout << "HDR " << clip_percentile
               << "th-percentile clip value: " << clip_value << std::endl;
 
-    std::vector<float> sdr_values;
-    sdr_values.reserve(width * height * 3);
     for (size_t i = 0; i < hdr_linear_image.size(); i++) {
         colorspace::Color hdr_rgb = hdr_linear_image[i];
         colorspace::Color sdr_rgb = sdr_gammut_conv(hdr_rgb);
@@ -193,9 +191,6 @@ void HDRToGainMap(const std::unique_ptr<imageops::Image> &hdr_image,
         uint8_t r = static_cast<uint8_t>(std::min(255.f, std::max(0.f, srgb_gamma.r * 255.f + 0.5f)));
         uint8_t g = static_cast<uint8_t>(std::min(255.f, std::max(0.f, srgb_gamma.g * 255.f + 0.5f)));
         uint8_t b = static_cast<uint8_t>(std::min(255.f, std::max(0.f, srgb_gamma.b * 255.f + 0.5f)));
-        sdr_values.push_back(static_cast<float>(r));
-        sdr_values.push_back(static_cast<float>(g));
-        sdr_values.push_back(static_cast<float>(b));
 
         srgb_gamma.r = static_cast<float>(r) / 255.f;
         srgb_gamma.g = static_cast<float>(g) / 255.f;
@@ -217,9 +212,6 @@ void HDRToGainMap(const std::unique_ptr<imageops::Image> &hdr_image,
         max_gain = std::max(gain, max_gain);
         gainmap.push_back(gain);
     }
-    float average = std::accumulate(sdr_values.begin(), sdr_values.end(), 0.0) /
-                    sdr_values.size();
-    std::cout << "AVERAGE " << average << std::endl;
     std::cout << "Gainmap computed." << std::endl;
 
     // generate map
@@ -305,9 +297,9 @@ void HDRToGainMap(const std::unique_ptr<imageops::Image> &hdr_image,
                 size_t idx = y * width + x;
                 const auto &color = sdr_image[idx];
                 size_t pixel_idx = x * channels;
-                row[pixel_idx] = static_cast<uint8_t>(color.r * 255.f);
-                row[pixel_idx + 1] = static_cast<uint8_t>(color.g * 255.f);
-                row[pixel_idx + 2] = static_cast<uint8_t>(color.b * 255.f);
+                row[pixel_idx] = static_cast<uint8_t>(std::min(255.f, std::max(0.f, color.r * 255.f + 0.5f)));
+                row[pixel_idx + 1] = static_cast<uint8_t>(std::min(255.f, std::max(0.f, color.g * 255.f + 0.5f)));
+                row[pixel_idx + 2] = static_cast<uint8_t>(std::min(255.f, std::max(0.f, color.b * 255.f + 0.5f)));
             }
         }
 
@@ -524,9 +516,9 @@ void GainmapSdrToHDR(const std::unique_ptr<imageops::Image> &sdr_image,
                 size_t pixel_idx = x * channels * 2; // 2 bytes per channel
 
                 // Convert [0,1] float to 16-bit value and split into bytes
-                uint16_t r = static_cast<uint16_t>(color.r * 65535.0f);
-                uint16_t g = static_cast<uint16_t>(color.g * 65535.0f);
-                uint16_t b = static_cast<uint16_t>(color.b * 65535.0f);
+                uint16_t r = static_cast<uint16_t>(std::min(65535.f, std::max(0.f, color.r * 65535.f + 0.5f)));
+                uint16_t g = static_cast<uint16_t>(std::min(65535.f, std::max(0.f, color.g * 65535.f + 0.5f)));
+                uint16_t b = static_cast<uint16_t>(std::min(65535.f, std::max(0.f, color.b * 65535.f + 0.5f)));
 
                 // PNG requires 16-bit values to be stored in big-endian
                 // (network byte order) regardless of the host's endianness
