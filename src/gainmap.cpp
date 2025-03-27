@@ -173,6 +173,8 @@ void HDRToGainMap(const std::unique_ptr<imageops::Image> &hdr_image,
     std::cout << "HDR " << clip_percentile
               << "th-percentile clip value: " << clip_value << std::endl;
 
+    std::vector<float> sdr_values;
+    sdr_values.reserve(width * height * channels);
     for (size_t i = 0; i < hdr_linear_image.size(); i++) {
         colorspace::Color hdr_rgb = hdr_linear_image[i];
         colorspace::Color sdr_rgb = sdr_gammut_conv(hdr_rgb);
@@ -197,6 +199,10 @@ void HDRToGainMap(const std::unique_ptr<imageops::Image> &hdr_image,
 
         sdr_rgb = sdr_inv_oetf(srgb_gamma);
 
+        sdr_values.push_back(sdr_rgb.r);
+        sdr_values.push_back(sdr_rgb.g);
+        sdr_values.push_back(sdr_rgb.b);
+
         colorspace::Color sdr_rgb_bt2100 = sdr_hdr_gamut_conv(sdr_rgb);
 
         float hdr_y_nits, sdr_y_nits;
@@ -211,6 +217,9 @@ void HDRToGainMap(const std::unique_ptr<imageops::Image> &hdr_image,
         max_gain = std::max(gain, max_gain);
         gainmap.push_back(gain);
     }
+    float average = std::accumulate(sdr_values.begin(), sdr_values.end(), 0.0) /
+                    sdr_values.size();
+    std::cout << "The average is " << average << std::endl;
     std::cout << "Gainmap computed." << std::endl;
 
     // generate map
@@ -519,8 +528,8 @@ void GainmapSdrToHDR(const std::unique_ptr<imageops::Image> &sdr_image,
                 uint16_t g = static_cast<uint16_t>(color.g * 65535.0f);
                 uint16_t b = static_cast<uint16_t>(color.b * 65535.0f);
 
-                // PNG requires 16-bit values to be stored in big-endian (network byte order)
-                // regardless of the host's endianness
+                // PNG requires 16-bit values to be stored in big-endian
+                // (network byte order) regardless of the host's endianness
                 row[pixel_idx] = (r >> 8) & 0xFF;     // MSB
                 row[pixel_idx + 1] = r & 0xFF;        // LSB
                 row[pixel_idx + 2] = (g >> 8) & 0xFF; // MSB
@@ -530,7 +539,8 @@ void GainmapSdrToHDR(const std::unique_ptr<imageops::Image> &sdr_image,
             }
         }
 
-        std::string hdr_path = output_dir + "/" + file_stem + "_reconstructed_hdr.png";
+        std::string hdr_path =
+            output_dir + "/" + file_stem + "_reconstructed_hdr.png";
         imageops::WriteToPNG(hdr_png, hdr_path, error);
         if (error.raise)
             return;
