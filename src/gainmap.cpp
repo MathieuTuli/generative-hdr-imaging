@@ -289,6 +289,26 @@ void HDRToGainMap(const std::unique_ptr<imageops::Image> &hdr_image,
         hdr_y_nits = bt2100_luminance_fn(hdr_rgb) * hdr_peaknits;
         float gain = ComputeGain(hdr_y_nits, sdr_y_nits);
         
+        // Add explicit check for NaN/Inf values
+        if (std::isnan(gain) || std::isinf(gain)) {
+            std::cout << "DEBUG: Skipping invalid gain value at (" << x << "," << y << ")" << std::endl;
+            continue;
+        }
+        
+        // Debug when min_gain gets updated
+        if (gain < min_gain) {
+            std::cout << "DEBUG: Updating min_gain: " << min_gain << " -> " << gain 
+                      << " at position (" << x << "," << y << ")" << std::endl;
+            min_gain = gain;
+        }
+        
+        // Debug when max_gain gets updated
+        if (gain > max_gain) {
+            std::cout << "DEBUG: Updating max_gain: " << max_gain << " -> " << gain
+                      << " at position (" << x << "," << y << ")" << std::endl;  
+            max_gain = gain;
+        }
+        
         gainmap.push_back(gain);
     }
     std::cout << "Gainmap computed." << std::endl;
