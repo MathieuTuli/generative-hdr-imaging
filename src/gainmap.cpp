@@ -9,7 +9,7 @@
 namespace gainmap {
 float ComputeGain(float hdr_y_nits, float sdr_y_nits,
                   float hdr_offset = 0.015625f, float sdr_offset = 0.015625f) {
-    float gain = log2((hdr_y_nits + hdr_offset) / (sdr_y_nits + sdr_offset));
+    float gain = log2f((hdr_y_nits + hdr_offset) / (sdr_y_nits + sdr_offset));
     if (sdr_y_nits < 2.f / 255.0f) {
         // If sdr is zero and hdr is non zero, it can result in very large gain
         // values. In compression - decompression process, if the same sdr pixel
@@ -35,9 +35,9 @@ colorspace::Color ApplyGain(colorspace::Color e, float gain, float map_gamma,
                             float sdr_offset = 0.015625f) {
     if (map_gamma != 1.0f)
         gain = pow(gain, 1.0f / map_gamma);
-    float log_boost = log2(min_content_boost) * (1.0f - gain) +
-                      log2(max_content_boost) * gain;
-    float gain_factor = exp2(log_boost);
+    float log_boost = log2f(min_content_boost) * (1.0f - gain) +
+                      log2f(max_content_boost) * gain;
+    float gain_factor = exp2f(log_boost);
     return ((e + sdr_offset) * gain_factor) - hdr_offset;
 }
 
@@ -206,6 +206,7 @@ void HDRToGainMap(const std::unique_ptr<imageops::Image> &hdr_image,
         sdr_y_nits =
             bt2100_luminance_fn(sdr_rgb_bt2100) * colorspace::SDR_WHITE_NITS;
         hdr_y_nits = bt2100_luminance_fn(hdr_rgb) * hdr_peaknits;
+        std::cout << sdr_y_nits << " , ";
         float gain = ComputeGain(hdr_y_nits, sdr_y_nits);
         min_gain = std::min(gain, min_gain);
         max_gain = std::max(gain, max_gain);
@@ -225,15 +226,15 @@ void HDRToGainMap(const std::unique_ptr<imageops::Image> &hdr_image,
     // TODO: if min/max content boost are given
     float min_content_boost = 1.0f;
     float max_content_boost = hdr_peaknits / colorspace::SDR_WHITE_NITS;
-    min_gain = std::min(min_gain, min_content_boost);
-    max_gain = std::max(max_gain, max_content_boost);
+    min_gain = std::min(min_gain, log2f(min_content_boost));
+    max_gain = std::max(max_gain, log2f(max_content_boost));
     if (fabs(max_gain - min_gain) < 1.0e-8) {
         max_gain += 0.1f; // to avoid div by zero during affine transform
     }
     std::cout << "Max/min gain (log2): " << max_gain << "/" << min_gain
               << std::endl;
-    std::cout << "Max/min gain (exp2): " << exp2(max_gain) << "/"
-              << exp2(min_gain) << std::endl;
+    std::cout << "Max/min gain (exp2): " << exp2f(max_gain) << "/"
+              << exp2f(min_gain) << std::endl;
 
     std::cout << "Computing affine gainmap..." << std::endl;
     for (size_t i = 0; i < gainmap.size(); i++) {
@@ -353,14 +354,14 @@ void HDRToGainMap(const std::unique_ptr<imageops::Image> &hdr_image,
     {
         nlohmann::json metadata;
         metadata["max_gain"] = max_gain;
-        metadata["max_content_boost"] = exp2(max_gain);
+        metadata["max_content_boost"] = exp2f(max_gain);
         metadata["min_gain"] = min_gain;
-        metadata["min_content_boost"] = exp2(min_gain);
+        metadata["min_content_boost"] = exp2f(min_gain);
         metadata["map_gamma"] = map_gamma;
         metadata["hdr_offset"] = 0.015625f;
         metadata["sdr_offset"] = 0.015625f;
         metadata["clip_percentile"] = clip_percentile;
-        metadata["hdr_capacity_min"] = log2(1.0f);
+        metadata["hdr_capacity_min"] = log2f(1.0f);
         metadata["hdr_capacity_max"] =
             hdr_peaknits / colorspace::SDR_WHITE_NITS;
 
