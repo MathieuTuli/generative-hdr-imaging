@@ -200,9 +200,9 @@ void HDRToGainMap(const std::unique_ptr<imageops::Image> &hdr_image,
         srgb_gamma.r = static_cast<float>(r) / 255.f;
         srgb_gamma.g = static_cast<float>(g) / 255.f;
         srgb_gamma.b = static_cast<float>(b) / 255.f;
-        sdr_values1.push_back(sdr_rgb.r);
-        sdr_values1.push_back(sdr_rgb.g);
-        sdr_values1.push_back(sdr_rgb.b);
+        sdr_values1.push_back(srgb_gamma.r);
+        sdr_values1.push_back(srgb_gamma.g);
+        sdr_values1.push_back(srgb_gamma.b);
 
         sdr_rgb = sdr_inv_oetf(srgb_gamma);
 
