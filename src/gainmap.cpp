@@ -132,17 +132,11 @@ void HDRToGainMap(const std::unique_ptr<imageops::Image> &hdr_image,
                 b_value = hdr_row[idx + 2];
             } else if (bytes_per_channel == 2) {
                 // 10-bit, 12-bit, or 16-bit values stored in 2 bytes
-#if defined(__LITTLE_ENDIAN__) || (defined(__BYTE_ORDER__) && __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__)
-                    // little-endian
-                    r_value = (hdr_row[idx] << 8) | hdr_row[idx];
-                    g_value = (hdr_row[idx + 2] << 8) | hdr_row[idx + 2];
-                    b_value = (hdr_row[idx + 4] << 8) | hdr_row[idx + 4];
-#else
-                    // big-endian
-                    r_value = (hdr_row[idx] << 8) | hdr_row[idx + 1];
-                    g_value = (hdr_row[idx + 2] << 8) | hdr_row[idx + 3];
-                    b_value = (hdr_row[idx + 4] << 8) | hdr_row[idx + 5];
-#endif
+                // PNG stores 16-bit values in big-endian (network byte order)
+                // regardless of the host's endianness
+                r_value = (hdr_row[idx] << 8) | hdr_row[idx + 1];
+                g_value = (hdr_row[idx + 2] << 8) | hdr_row[idx + 3];
+                b_value = (hdr_row[idx + 4] << 8) | hdr_row[idx + 5];
             }
 
             // create a mask for the actual bit depth
@@ -525,23 +519,14 @@ void GainmapSdrToHDR(const std::unique_ptr<imageops::Image> &sdr_image,
                 uint16_t g = static_cast<uint16_t>(color.g * 65535.0f);
                 uint16_t b = static_cast<uint16_t>(color.b * 65535.0f);
 
-#if defined(__LITTLE_ENDIAN__) || (defined(__BYTE_ORDER__) && __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__)
-                // Store in little-endian format
-                row[pixel_idx] = r & 0xFF;
-                row[pixel_idx + 1] = (r >> 8) & 0xFF;
-                row[pixel_idx + 2] = g & 0xFF;
-                row[pixel_idx + 3] = (g >> 8) & 0xFF;
-                row[pixel_idx + 4] = b & 0xFF;
-                row[pixel_idx + 5] = (b >> 8) & 0xFF;
-#else
-                // Store in big-endian format
-                row[pixel_idx] = (r >> 8) & 0xFF;
-                row[pixel_idx + 1] = r & 0xFF;
-                row[pixel_idx + 2] = (g >> 8) & 0xFF;
-                row[pixel_idx + 3] = g & 0xFF;
-                row[pixel_idx + 4] = (b >> 8) & 0xFF;
-                row[pixel_idx + 5] = b & 0xFF;
-#endif
+                // PNG requires 16-bit values to be stored in big-endian (network byte order)
+                // regardless of the host's endianness
+                row[pixel_idx] = (r >> 8) & 0xFF;     // MSB
+                row[pixel_idx + 1] = r & 0xFF;        // LSB
+                row[pixel_idx + 2] = (g >> 8) & 0xFF; // MSB
+                row[pixel_idx + 3] = g & 0xFF;        // LSB
+                row[pixel_idx + 4] = (b >> 8) & 0xFF; // MSB
+                row[pixel_idx + 5] = b & 0xFF;        // LSB
             }
         }
 

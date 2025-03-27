@@ -157,11 +157,9 @@ std::unique_ptr<Image> LoadHDRPNG(const std::string &filename,
                 if (bytes_per_sample == 1) {
                     value = row[idx];
                 } else if (bytes_per_sample == 2) {
-#if defined(__LITTLE_ENDIAN__) || (defined(__BYTE_ORDER__) && __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__)
-                    value = (row[idx] << 8) | row[idx]; // little-endian
-#else
-                    value = (row[idx] << 8) | row[idx + 1]; // big-endian
-#endif
+                    // PNG stores 16-bit values in big-endian (network byte order)
+                    // regardless of the host's endianness
+                    value = (row[idx] << 8) | row[idx + 1]; 
                 }
 
                 min_val = std::min(min_val, value);
