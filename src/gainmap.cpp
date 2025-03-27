@@ -263,13 +263,14 @@ void HDRToGainMap(const std::unique_ptr<imageops::Image> &hdr_image,
                               hdr_linear_flat);
     }
 
+    // DEPRECATE:
     // Save input HDR image as PNG
-    {
-        std::string hdr_path = output_dir + "/" + file_stem + "_input_hdr.png";
-        imageops::WriteToPNG(hdr_image, hdr_path, error);
-        if (error.raise)
-            return;
-    }
+    // {
+    //     std::string hdr_path = output_dir + "/" + file_stem + "_input_hdr.png";
+    //     imageops::WriteToPNG(hdr_image, hdr_path, error);
+    //     if (error.raise)
+    //         return;
+    // }
 
     // Save SDR image as PNG
     {
