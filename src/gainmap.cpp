@@ -31,7 +31,7 @@ float AffineMapGain(float gainlog2, float min_gainlog2, float max_gainlog2,
 
 colorspace::Color ApplyGain(colorspace::Color e, float gain, float map_gamma,
                             float min_content_boost, float max_content_boost,
-                            float hdr_offset = 0.015625,
+                            float hdr_offset = 0.015625f,
                             float sdr_offset = 0.015625f) {
     if (map_gamma != 1.0f)
         gain = pow(gain, 1.0f / map_gamma);
@@ -206,7 +206,6 @@ void HDRToGainMap(const std::unique_ptr<imageops::Image> &hdr_image,
         sdr_y_nits =
             bt2100_luminance_fn(sdr_rgb_bt2100) * colorspace::SDR_WHITE_NITS;
         hdr_y_nits = bt2100_luminance_fn(hdr_rgb) * hdr_peaknits;
-        std::cout << sdr_y_nits << " , ";
         float gain = ComputeGain(hdr_y_nits, sdr_y_nits);
         min_gain = std::min(gain, min_gain);
         max_gain = std::max(gain, max_gain);
