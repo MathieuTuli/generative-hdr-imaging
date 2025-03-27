@@ -191,13 +191,14 @@ void HDRToGainMap(const std::unique_ptr<imageops::Image> &hdr_image,
         sdr_rgb.g = std::min(sdr_rgb.g, clip_value) / clip_value;
         sdr_rgb.b = std::min(sdr_rgb.b, clip_value) / clip_value;
 
-        sdr_values0.push_back(sdr_rgb.r);
-        sdr_values0.push_back(sdr_rgb.g);
-        sdr_values0.push_back(sdr_rgb.b);
 
         colorspace::Color srgb_gamma = sdr_oetf(sdr_rgb);
         // TODO: apply tone map
         sdr_image.push_back(srgb_gamma);
+
+        sdr_values0.push_back(srgb_gamma.r);
+        sdr_values0.push_back(srgb_gamma.g);
+        sdr_values0.push_back(srgb_gamma.b);
 
         uint8_t r = static_cast<uint8_t>(srgb_gamma.r * 255.f);
         uint8_t g = static_cast<uint8_t>(srgb_gamma.g * 255.f);
