@@ -207,6 +207,7 @@ ImageMetadata ReadMetadata(const std::string &filename, utils::Error &error) {
             return metadata;
         }
     } else {
+        spdlog::debug("Exif:");
         for (TagInfo *i = info; i; i = i->next) {
             std::string name(i->name);
             std::string value(i->value);
@@ -239,7 +240,7 @@ ImageMetadata ReadMetadata(const std::string &filename, utils::Error &error) {
                     error = {true, "Unknown color space: " + value};
                 }
             }
-            spdlog::debug("[EXIF] {} = {}", i->name, i->value);
+            spdlog::debug("  {} = {}", i->name, i->value);
         }
         delete info;
     }
