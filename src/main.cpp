@@ -4,13 +4,13 @@
 #include "spdlog/spdlog.h"
 #include "utils.h"
 #include <filesystem>
-#include <getopt.h>
 #include <fmt/format.h>
+#include <getopt.h>
 #include <string>
 
 #define PROGRAM_VERSION "1.0.0"
 
-enum class ConversionMode { HDR_TO_UHDR, UHDR_TO_HDR };
+enum class ConversionMode { HDR_TO_UHDR, UHDR_TO_HDR, COMPARE_HDR_UHDR };
 enum class InputMode { SINGLE_FILE, DIRECTORY };
 
 // Helper function to get the stem of a filepath
@@ -93,7 +93,7 @@ bool ProcessUHDRToHDR(const std::string &input_file,
         return false;
     }
 
-    gainmap::GainmapSdrToHDR(image, gainmap_data, metadata_file, output_stem,
+    gainmap::GainmapSDRToHDR(image, gainmap_data, metadata_file, output_stem,
                              output_dir, error);
     if (error.raise) {
         spdlog::error("Failed to convert SDR + Gainmap to HDR: {}",
@@ -109,10 +109,13 @@ void PrintUsage(const char *programName) {
         "\nOptions:\n"
         "  -u, --HDR2uHDR       Convert HDR to SDR + Gainmap\n"
         "  -z, --uHDR2HDR       Convert SDR + Gainmap to HDR\n"
+        "  -c, --compare        Compare original HDR with reconstructed HDR\n"
         "  -i, --input=PATH     Input image file or directory\n"
         "  -g, --gainmap=FILE   Gainmap file (required for uHDR2HDR)\n"
+        "  -s, --sdr=FILE      SDR image file (required for compare mode)\n"
         "  -m, --metadata=FILE  Metadata JSON file (required for uHDR2HDR)\n"
-        "  -o, --output=STEM    Output file stem (only used with single file input)\n"
+        "  -o, --output=STEM    Output file stem (only used with single file "
+        "input)\n"
         "  -d, --outdir=DIR     Output directory (default: current dir)\n"
         "  -p, --percentile=N   Clip percentile for gainmap (default: 0.95)\n"
         "  -h, --help           Display this help and exit\n"
@@ -127,14 +130,16 @@ void PrintUsage(const char *programName) {
 }
 
 void PrintVersion(const char *programName) {
-    fmt::print("{} version {}\nCopyright (C) 2025 RadiantFlow\nLicense: MIT License\n",
-               programName, PROGRAM_VERSION);
+    fmt::print(
+        "{} version {}\nCopyright (C) 2025 RadiantFlow\nLicense: MIT License\n",
+        programName, PROGRAM_VERSION);
 }
 
 int main(int argc, char *argv[]) {
     std::string input_path;
     std::string metadata_file;
     std::string gainmap_file;
+    std::string sdr_path;
     std::string output_dir = ".";
     std::string output_stem;
     ConversionMode mode;
@@ -154,12 +159,14 @@ int main(int argc, char *argv[]) {
         {"HDR2sdr", no_argument, 0, 's'},
         {"percentile", required_argument, 0, 'p'},
         {"gainmap", required_argument, 0, 'm'},
+        {"compare", no_argument, 0, 'c'},
+        {"sdr", required_argument, 0, 's'},
         {0, 0, 0, 0}};
 
     int option_index = 0;
     int c;
 
-    while ((c = getopt_long(argc, argv, "qhvi:o:d:zug:m:p:", long_options,
+    while ((c = getopt_long(argc, argv, "qhvi:o:d:zug:m:p:cs:", long_options,
                             &option_index)) != -1) {
         switch (c) {
         case 'h':
@@ -170,6 +177,9 @@ int main(int argc, char *argv[]) {
             return 0;
         case 'i':
             input_path = optarg;
+            break;
+        case 's':
+            sdr_path = optarg;
             break;
         case 'o':
             output_stem = optarg;
@@ -194,6 +204,14 @@ int main(int argc, char *argv[]) {
                 return 1;
             }
             mode = ConversionMode::UHDR_TO_HDR;
+            mode_set = true;
+            break;
+        case 'c':
+            if (mode_set) {
+                spdlog::error("Error: Only one mode can be specified");
+                return 1;
+            }
+            mode = ConversionMode::COMPARE_HDR_UHDR;
             mode_set = true;
             break;
         case 'g':
@@ -224,13 +242,23 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
-    if (mode == ConversionMode::UHDR_TO_HDR && gainmap_file.empty() &&
-        metadata_file.empty()) {
-        spdlog::error("Error: Gainmap file is required for SDR to HDR "
-                      "conversion (--gainmap/-m)");
+    if ((mode == ConversionMode::UHDR_TO_HDR ||
+         mode == ConversionMode::COMPARE_HDR_UHDR) &&
+        (gainmap_file.empty() || metadata_file.empty())) {
+        spdlog::error(
+            "Error: Gainmap and metadata files are required for SDR to HDR "
+            "conversion and comparison modes (--gainmap/-g and --metadata/-m)");
         PrintUsage(argv[0]);
         return 1;
     }
+
+    if (mode == ConversionMode::COMPARE_HDR_UHDR && sdr_path.empty()) {
+        spdlog::error(
+            "Error: SDR image path is required for comparison mode (--sdr/-s)");
+        PrintUsage(argv[0]);
+        return 1;
+    }
+
     if (input_path.empty()) {
         spdlog::error("Error: Input path is required (--input/-i)");
         PrintUsage(argv[0]);
@@ -248,7 +276,8 @@ int main(int argc, char *argv[]) {
                      ? InputMode::DIRECTORY
                      : InputMode::SINGLE_FILE;
 
-    if (input_mode == InputMode::SINGLE_FILE && output_stem.empty()) {
+    if (input_mode == InputMode::SINGLE_FILE && output_stem.empty() &&
+        mode != ConversionMode::COMPARE_HDR_UHDR) {
         spdlog::error("Error: Output stem is required for single file mode "
                       "(--output/-o)");
         PrintUsage(argv[0]);
@@ -270,9 +299,46 @@ int main(int argc, char *argv[]) {
         if (mode == ConversionMode::HDR_TO_UHDR) {
             success = ProcessHDRToUHDR(input_path, output_stem, output_dir,
                                        clip_percentile);
-        } else {
+        } else if (mode == ConversionMode::UHDR_TO_HDR) {
             success = ProcessUHDRToHDR(input_path, gainmap_file, metadata_file,
                                        output_stem, output_dir);
+        } else if (mode == ConversionMode::COMPARE_HDR_UHDR) {
+            utils::Error error;
+            std::unique_ptr<imageops::Image> hdr_image =
+                imageops::LoadImage(input_path, error);
+            if (error.raise) {
+                spdlog::error("Failed to load HDR image: {}", error.message);
+                return 1;
+            }
+
+            std::unique_ptr<imageops::Image> sdr_image =
+                imageops::LoadImage(sdr_path, error);
+            if (error.raise) {
+                spdlog::error("Failed to load SDR image: {}", error.message);
+                return 1;
+            }
+
+            // Load gainmap data
+            std::vector<unsigned long> shape;
+            bool fortran_order;
+            std::vector<float> gainmap_data;
+            try {
+                npy::LoadArrayFromNumpy(gainmap_file, shape, fortran_order,
+                                        gainmap_data);
+            } catch (const std::runtime_error &e) {
+                spdlog::error("Failed to load gainmap NPY file: {}", e.what());
+                return 1;
+            }
+
+            gainmap::CompareHDRToUHDR(hdr_image, sdr_image, gainmap_data,
+                                      metadata_file, output_stem, output_dir,
+                                      error);
+            if (error.raise) {
+                spdlog::error("Failed to compare HDR to UHDR: {}",
+                              error.message);
+                return 1;
+            }
+            success = true;
         }
         if (!success) {
             return 1;
@@ -332,7 +398,8 @@ int main(int argc, char *argv[]) {
             }
         }
 
-        spdlog::info("\nBatch processing completed:\nSuccessfully processed: {} files\nFailed: {} files",
+        spdlog::info("\nBatch processing completed:\nSuccessfully processed: "
+                     "{} files\nFailed: {} files",
                      processed, failed);
 
         if (processed == 0) {

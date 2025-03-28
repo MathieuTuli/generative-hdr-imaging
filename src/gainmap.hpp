@@ -15,9 +15,15 @@ void HDRToGainMap(const std::unique_ptr<imageops::Image> &hdr_image,
                   float clip_percentile, float map_map_gamma,
                   const std::string &file_stem, const std::string &output_dir,
                   utils::Error &error);
-void GainmapSdrToHDR(const std::unique_ptr<imageops::Image> &sdr_image,
+void GainmapSDRToHDR(const std::unique_ptr<imageops::Image> &sdr_image,
                      const std::vector<float> gainmap,
                      const std::string &metadata, const std::string &file_stem,
                      const std::string &output_dir, utils::Error &error);
+void CompareHDRToUHDR(const std::unique_ptr<imageops::Image> &hdr_image,
+                      const std::unique_ptr<imageops::Image> &sdr_image,
+                      const std::vector<float> gainmap,
+                      const std::string &metadata, const std::string
+                      &file_stem, const std::string &output_dir, utils::Error
+                      &error);
 } // namespace gainmap
 #endif
