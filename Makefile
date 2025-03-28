@@ -93,6 +93,8 @@ CXXFLAGS += -I$(EXIF_DIR)/inc
 
 CXXFLAGS += -I$(DEPS_DIR)/nlohmann/include
 
+LIBS += $(shell pkg-config --libs spdlog)
+
 # -- build rules
 # Prepends BUILD_DIR and appends .o to every src file
 OBJS := $(SRCS:%=$(BUILD_DIR)/%.o)

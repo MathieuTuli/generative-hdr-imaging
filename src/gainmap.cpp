@@ -1,5 +1,6 @@
 #include "gainmap.hpp"
 #include "npy.hpp"
+#include "spdlog/spdlog.h"
 #include "utils.h"
 #include <cmath>
 #include <fstream>
@@ -74,10 +75,11 @@ void HDRToGainMap(const std::unique_ptr<imageops::Image> &hdr_image,
         colorspace::GetOOTFFn(hdr_image->metadata.oetf);
     colorspace::ColorTransformFn hdr_gammut_conv =
         colorspace::GetGamutConversionFn(colorspace::Gamut::BT2100, hdr_gamut);
-    colorspace::ColorTransformFn hdr_rgb2yuv =
-        colorspace::GetRGBToYUVFn(hdr_gamut);
-    colorspace::ColorTransformFn hdr_yuv2rgb =
-        colorspace::GetRGBToYUVFn(hdr_gamut);
+    // DEPRECATE:
+    // colorspace::ColorTransformFn hdr_rgb2yuv =
+    //     colorspace::GetRGBToYUVFn(hdr_gamut);
+    // colorspace::ColorTransformFn hdr_yuv2rgb =
+    //     colorspace::GetRGBToYUVFn(hdr_gamut);
     colorspace::LuminanceFn hdr_luminance_fn =
         colorspace::GetLuminanceFn(hdr_gamut);
     colorspace::LuminanceFn bt2100_luminance_fn =
@@ -96,7 +98,6 @@ void HDRToGainMap(const std::unique_ptr<imageops::Image> &hdr_image,
         colorspace::GetGamutConversionFn(colorspace::Gamut::BT709,
                                          colorspace::Gamut::BT2100);
 
-    std::cout << "Initalized conversion functions" << std::endl;
     const size_t width = hdr_image->width;
     const size_t height = hdr_image->height;
     const size_t channels = 3;
@@ -113,7 +114,6 @@ void HDRToGainMap(const std::unique_ptr<imageops::Image> &hdr_image,
 
     float min_gain = 255.f;
     float max_gain = -255.f;
-    std::cout << "Processing hdr..." << std::endl;
     for (size_t y = 0; y < height; y++) {
         png_bytep hdr_row = hdr_image->row_pointers[y];
         for (size_t x = 0; x < width; x++) {
@@ -170,8 +170,8 @@ void HDRToGainMap(const std::unique_ptr<imageops::Image> &hdr_image,
     size_t percentile_idx =
         static_cast<size_t>(all_values.size() * clip_percentile);
     float clip_value = all_values[percentile_idx];
-    std::cout << "HDR " << clip_percentile
-              << "th-percentile clip value: " << clip_value << std::endl;
+    spdlog::debug("HDR {}th-percentile clip value: {}", clip_percentile,
+                  clip_value);
 
     for (size_t i = 0; i < hdr_linear_image.size(); i++) {
         colorspace::Color hdr_rgb = hdr_linear_image[i];
@@ -188,9 +188,12 @@ void HDRToGainMap(const std::unique_ptr<imageops::Image> &hdr_image,
         sdr_image.push_back(srgb_gamma);
 
         // add 0.5f for proper rounding and clamp to [0, 255]
-        uint8_t r = static_cast<uint8_t>(std::min(255.f, std::max(0.f, srgb_gamma.r * 255.f + 0.5f)));
-        uint8_t g = static_cast<uint8_t>(std::min(255.f, std::max(0.f, srgb_gamma.g * 255.f + 0.5f)));
-        uint8_t b = static_cast<uint8_t>(std::min(255.f, std::max(0.f, srgb_gamma.b * 255.f + 0.5f)));
+        uint8_t r = static_cast<uint8_t>(
+            std::min(255.f, std::max(0.f, srgb_gamma.r * 255.f + 0.5f)));
+        uint8_t g = static_cast<uint8_t>(
+            std::min(255.f, std::max(0.f, srgb_gamma.g * 255.f + 0.5f)));
+        uint8_t b = static_cast<uint8_t>(
+            std::min(255.f, std::max(0.f, srgb_gamma.b * 255.f + 0.5f)));
 
         srgb_gamma.r = static_cast<float>(r) / 255.f;
         srgb_gamma.g = static_cast<float>(g) / 255.f;
@@ -212,7 +215,6 @@ void HDRToGainMap(const std::unique_ptr<imageops::Image> &hdr_image,
         max_gain = std::max(gain, max_gain);
         gainmap.push_back(gain);
     }
-    std::cout << "Gainmap computed." << std::endl;
 
     // generate map
     // NOTE: from LibUltraHDR
@@ -231,12 +233,9 @@ void HDRToGainMap(const std::unique_ptr<imageops::Image> &hdr_image,
     if (fabs(max_gain - min_gain) < 1.0e-8) {
         max_gain += 0.1f; // to avoid div by zero during affine transform
     }
-    std::cout << "Max/min gain (log2): " << max_gain << "/" << min_gain
-              << std::endl;
-    std::cout << "Max/min gain (exp2): " << exp2f(max_gain) << "/"
-              << exp2f(min_gain) << std::endl;
+    spdlog::debug("Max/min gain (log2): {}/{}", max_gain, min_gain);
+    spdlog::debug("Max/min gain (exp2): {}/{}", exp2f(max_gain), exp2f(min_gain));
 
-    std::cout << "Computing affine gainmap..." << std::endl;
     for (size_t i = 0; i < gainmap.size(); i++) {
         gainmap[i] = AffineMapGain(gainmap[i], min_gain, max_gain, map_gamma);
 
@@ -245,7 +244,6 @@ void HDRToGainMap(const std::unique_ptr<imageops::Image> &hdr_image,
             static_cast<uint8_t>(colorspace::Clip(mapped_gain + 0.5f, 0, 255));
     }
 
-    std::cout << "Saving images and npy..." << std::endl;
     // Save HDR linear image as NPY
     {
         const size_t shape[] = {height, width, channels};
@@ -266,8 +264,8 @@ void HDRToGainMap(const std::unique_ptr<imageops::Image> &hdr_image,
     // DEPRECATE:
     // Save input HDR image as PNG
     // {
-    //     std::string hdr_path = output_dir + "/" + file_stem + "_input_hdr.png";
-    //     imageops::WriteToPNG(hdr_image, hdr_path, error);
+    //     std::string hdr_path = output_dir + "/" + file_stem +
+    //     "_input_hdr.png"; imageops::WriteToPNG(hdr_image, hdr_path, error);
     //     if (error.raise)
     //         return;
     // }
@@ -298,9 +296,12 @@ void HDRToGainMap(const std::unique_ptr<imageops::Image> &hdr_image,
                 size_t idx = y * width + x;
                 const auto &color = sdr_image[idx];
                 size_t pixel_idx = x * channels;
-                row[pixel_idx] = static_cast<uint8_t>(std::min(255.f, std::max(0.f, color.r * 255.f + 0.5f)));
-                row[pixel_idx + 1] = static_cast<uint8_t>(std::min(255.f, std::max(0.f, color.g * 255.f + 0.5f)));
-                row[pixel_idx + 2] = static_cast<uint8_t>(std::min(255.f, std::max(0.f, color.b * 255.f + 0.5f)));
+                row[pixel_idx] = static_cast<uint8_t>(
+                    std::min(255.f, std::max(0.f, color.r * 255.f + 0.5f)));
+                row[pixel_idx + 1] = static_cast<uint8_t>(
+                    std::min(255.f, std::max(0.f, color.g * 255.f + 0.5f)));
+                row[pixel_idx + 2] = static_cast<uint8_t>(
+                    std::min(255.f, std::max(0.f, color.b * 255.f + 0.5f)));
             }
         }
 
@@ -517,9 +518,12 @@ void GainmapSdrToHDR(const std::unique_ptr<imageops::Image> &sdr_image,
                 size_t pixel_idx = x * channels * 2; // 2 bytes per channel
 
                 // Convert [0,1] float to 16-bit value and split into bytes
-                uint16_t r = static_cast<uint16_t>(std::min(65535.f, std::max(0.f, color.r * 65535.f + 0.5f)));
-                uint16_t g = static_cast<uint16_t>(std::min(65535.f, std::max(0.f, color.g * 65535.f + 0.5f)));
-                uint16_t b = static_cast<uint16_t>(std::min(65535.f, std::max(0.f, color.b * 65535.f + 0.5f)));
+                uint16_t r = static_cast<uint16_t>(
+                    std::min(65535.f, std::max(0.f, color.r * 65535.f + 0.5f)));
+                uint16_t g = static_cast<uint16_t>(
+                    std::min(65535.f, std::max(0.f, color.g * 65535.f + 0.5f)));
+                uint16_t b = static_cast<uint16_t>(
+                    std::min(65535.f, std::max(0.f, color.b * 65535.f + 0.5f)));
 
                 // PNG requires 16-bit values to be stored in big-endian
                 // (network byte order) regardless of the host's endianness
@@ -539,4 +543,46 @@ void GainmapSdrToHDR(const std::unique_ptr<imageops::Image> &sdr_image,
             return;
     }
 }
+
+// void CompareHDRToUHDR(const std::unique_ptr<imageops::Image> &hdr_image,
+//                       const std::unique_ptr<imageops::Image> &sdr_image,
+//                       const std::vector<float> gainmap,
+//                       const std::string &metadata, const std::string
+//                       &file_stem, const std::string &output_dir, utils::Error
+//                       &error) {
+//     if (!hdr_image || !hdr_image->row_pointers) {
+//         error = {true, "Invalid input HDR image"};
+//         return;
+//     }
+//
+//     colorspace::Gamut hdr_gamut = hdr_image->metadata.gamut;
+//     colorspace::ColorTransformFn hdr_inv_oetf =
+//         colorspace::GetInvOETFFn(hdr_image->metadata.oetf);
+//     colorspace::SceneToDisplayLuminanceFn hdr_ootf =
+//         colorspace::GetOOTFFn(hdr_image->metadata.oetf);
+//     colorspace::ColorTransformFn hdr_gammut_conv =
+//         colorspace::GetGamutConversionFn(colorspace::Gamut::BT2100,
+//         hdr_gamut);
+//     colorspace::ColorTransformFn hdr_rgb2yuv =
+//         colorspace::GetRGBToYUVFn(hdr_gamut);
+//     colorspace::ColorTransformFn hdr_yuv2rgb =
+//         colorspace::GetRGBToYUVFn(hdr_gamut);
+//     colorspace::LuminanceFn hdr_luminance_fn =
+//         colorspace::GetLuminanceFn(hdr_gamut);
+//     colorspace::LuminanceFn bt2100_luminance_fn =
+//         colorspace::GetLuminanceFn(colorspace::Gamut::BT2100);
+//     float hdr_peaknits = colorspace::GetReferenceDisplayPeakLuminanceInNits(
+//         hdr_image->metadata.oetf);
+//     colorspace::ColorTransformFn sdr_gammut_conv =
+//         colorspace::GetGamutConversionFn(
+//
+//             colorspace::Gamut::BT709, colorspace::Gamut::BT2100);
+//     colorspace::ColorTransformFn sdr_inv_oetf =
+//         colorspace::GetInvOETFFn(colorspace::OETF::SRGB);
+//     colorspace::ColorTransformFn sdr_oetf =
+//         colorspace::GetOETFFn(colorspace::OETF::SRGB);
+//     colorspace::ColorTransformFn sdr_hdr_gamut_conv =
+//         colorspace::GetGamutConversionFn(colorspace::Gamut::BT709,
+//                                          colorspace::Gamut::BT2100);
+// }
 } // namespace gainmap

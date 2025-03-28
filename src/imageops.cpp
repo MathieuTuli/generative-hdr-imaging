@@ -1,5 +1,6 @@
 #include "imageops.hpp"
 #include "npy.hpp"
+#include "spdlog/spdlog.h"
 #include "utils.h"
 #include <ExifTool.h>
 #include <algorithm>
@@ -157,9 +158,9 @@ std::unique_ptr<Image> LoadHDRPNG(const std::string &filename,
                 if (bytes_per_sample == 1) {
                     value = row[idx];
                 } else if (bytes_per_sample == 2) {
-                    // PNG stores 16-bit values in big-endian (network byte order)
-                    // regardless of the host's endianness
-                    value = (row[idx] << 8) | row[idx + 1]; 
+                    // PNG stores 16-bit values in big-endian (network byte
+                    // order) regardless of the host's endianness
+                    value = (row[idx] << 8) | row[idx + 1];
                 }
 
                 min_val = std::min(min_val, value);
@@ -172,14 +173,10 @@ std::unique_ptr<Image> LoadHDRPNG(const std::string &filename,
     double mean = sum / total_pixels;
     double scale = 1.0 / max_value; // Normalize to [0,1] range
 
-    std::cout << "Image value range (" << image->bit_depth
-              << "-bit):" << std::endl;
-    std::cout << "  Min: " << min_val << " (" << (min_val * scale) << ")"
-              << std::endl;
-    std::cout << "  Max: " << max_val << " (" << (max_val * scale) << ")"
-              << std::endl;
-    std::cout << "  Mean: " << mean << " (" << (mean * scale) << ")"
-              << std::endl;
+    spdlog::debug("Image value range ({}-bit):", image->bit_depth);
+    spdlog::debug("  Min: {} ({:.6f})", min_val, min_val * scale);
+    spdlog::debug("  Max: {} ({:.6f})", max_val, max_val * scale);
+    spdlog::debug("  Mean: {} ({:.6f})", mean, mean * scale);
 
     png_destroy_read_struct(&png, &info, nullptr);
     fclose(fp);
@@ -204,7 +201,6 @@ ImageMetadata ReadMetadata(const std::string &filename, utils::Error &error) {
         return metadata;
     }
 
-    std::cout << "----------------------------------------" << std::endl;
     if (!info) {
         if (et->LastComplete() <= 0) {
             error = {true, "Error executing exiftool!"};
@@ -243,11 +239,10 @@ ImageMetadata ReadMetadata(const std::string &filename, utils::Error &error) {
                     error = {true, "Unknown color space: " + value};
                 }
             }
-            std::cout << i->name << " = " << i->value << std::endl;
+            spdlog::debug("[EXIF] {} = {}", i->name, i->value);
         }
         delete info;
     }
-    std::cout << "----------------------------------------" << std::endl;
     return metadata;
 }
 
