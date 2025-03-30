@@ -20,7 +20,8 @@ float sRGBLuminance(Color e) {
 // Uses the same coefficients for deriving luma signal as
 // IEC 61966-2-1/Amd 1:2003 states for luminance, so we reuse the luminance
 // function above.
-static const float SRGB_CB = (2.f * (1.f - SRGB_B)), SRGB_CR = (2 * (1 - SRGB_R));
+static const float SRGB_CB = (2.f * (1.f - SRGB_B)),
+                   SRGB_CR = (2 * (1 - SRGB_R));
 
 // these are gamma encoded, i.e. non-linear
 Color sRGB_RGBToYUV(Color e_gamma) {
@@ -122,7 +123,8 @@ Color P3_YUVToRGB(Color e_gamma) {
 // NOTE: BT.2100 transformations - according to ITU-R BT.2100-2
 
 // See ITU-R BT.2100-2, Table 5, HLG Reference OOTF
-static const float BT2100_R = 0.2627f, BT2100_G = 0.677998f, BT2100_B = 0.059302f;
+static const float BT2100_R = 0.2627f, BT2100_G = 0.677998f,
+                   BT2100_B = 0.059302f;
 
 float Bt2100Luminance(Color e) {
     return BT2100_R * e.r + BT2100_G * e.g + BT2100_B * e.b;
@@ -177,7 +179,8 @@ Color Bt2100_YUVToRGB(Color e_gamma) {
 }
 
 // See ITU-R BT.2100-2, Table 5, HLG Reference OETF.
-static const float HLG_A = 0.17883277f, HLG_B = 0.28466892f, HLG_C = 0.55991073f;
+static const float HLG_A = 0.17883277f, HLG_B = 0.28466892f,
+                   HLG_C = 0.55991073f;
 
 float HLG_OETF(float e) {
     if (e <= 1.0 / 12.0) {
@@ -257,12 +260,14 @@ Color HLG_InvOOTF(Color e, LuminanceFn luminance) {
 }
 
 Color HLG_InvOOTFApprox(Color e) {
-    return {{{std::pow(e.r, 1.0f / OOTF_GAMMA), std::pow(e.g, 1.0f / OOTF_GAMMA),
-              std::pow(e.b, 1.0f / OOTF_GAMMA)}}};
+    return {
+        {{std::pow(e.r, 1.0f / OOTF_GAMMA), std::pow(e.g, 1.0f / OOTF_GAMMA),
+          std::pow(e.b, 1.0f / OOTF_GAMMA)}}};
 }
 
 // See ITU-R BT.2100-2, Table 4, Reference PQ OETF.
-static const float PQ_M1 = 2610.0f / 16384.0f, PQ_M2 = 2523.0f / 4096.0f * 128.0f;
+static const float PQ_M1 = 2610.0f / 16384.0f,
+                   PQ_M2 = 2523.0f / 4096.0f * 128.0f;
 static const float PQ_C1 = 3424.0f / 4096.0f, PQ_C2 = 2413.0f / 4096.0f * 32.0f,
                    PQ_C3 = 2392.0f / 4096.0f * 32.0f;
 

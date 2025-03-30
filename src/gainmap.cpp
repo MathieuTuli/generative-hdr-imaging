@@ -107,25 +107,22 @@ float AffineMapGain(float gainlog2, float min_gainlog2, float max_gainlog2,
         mapped_val = pow(mapped_val, map_gamma);
     return mapped_val;
 }
-
-float RecomputeHDRLuminance(float sdr_luminance, float gain, float map_gamma,
-                            float min_content_boost, float max_content_boost,
+float RecomputeHDRLuminance(float sdr_luminance, float gain,
                             float hdr_offset = 0.015625f,
                             float sdr_offset = 0.015625f) {
-    // Invert the gamma mapping if necessary.
+    float gain_factor = exp2f(gain);
+    return (sdr_luminance + sdr_offset) * gain_factor - hdr_offset;
+}
+
+float UndoAffineMapGain(float gain, float map_gamma, float min_content_boost,
+                        float max_content_boost) {
     float effective_gain =
         (map_gamma != 1.0f) ? powf(gain, 1.0f / map_gamma) : gain;
-    // Compute the logarithmic bounds for content boost.
     float log_min = log2f(min_content_boost);
     float log_max = log2f(max_content_boost);
-    // Interpolate linearly in the log2 domain.
     float log_boost =
         log_min * (1.0f - effective_gain) + log_max * effective_gain;
-    // Compute the gain factor.
-    float gain_factor = exp2f(log_boost);
-    // Apply the gain factor to the SDR luminance (with offsets) to recover HDR
-    // luminance.
-    return (sdr_luminance + sdr_offset) * gain_factor - hdr_offset;
+    return log_boost;
 }
 
 colorspace::Color ApplyGain(colorspace::Color e, float gain, float map_gamma,
@@ -182,7 +179,7 @@ void HDRToGainMap(const std::unique_ptr<imageops::Image> &hdr_image,
         colorspace::GetLuminanceFn(hdr_gamut);
     colorspace::LuminanceFn bt2100_luminance_fn =
         colorspace::GetLuminanceFn(colorspace::Gamut::BT2100);
-    float hdr_peaknits = colorspace::GetReferenceDisplayPeakLuminanceInNits(
+    float hdr_peak_nits = colorspace::GetReferenceDisplayPeakLuminanceInNits(
         hdr_image->metadata.oetf);
     colorspace::ColorTransformFn sdr_gamut_conv =
         colorspace::GetGamutConversionFn(colorspace::Gamut::BT709,
@@ -192,8 +189,8 @@ void HDRToGainMap(const std::unique_ptr<imageops::Image> &hdr_image,
     colorspace::ColorTransformFn sdr_oetf =
         colorspace::GetOETFFn(colorspace::OETF::SRGB);
     colorspace::ColorTransformFn sdr_hdr_gamut_conv =
-        colorspace::GetGamutConversionFn(colorspace::Gamut::BT709,
-                                         colorspace::Gamut::BT2100);
+        colorspace::GetGamutConversionFn(colorspace::Gamut::BT2100,
+                                         colorspace::Gamut::BT709);
 
     const size_t width = hdr_image->width;
     const size_t height = hdr_image->height;
@@ -241,6 +238,7 @@ void HDRToGainMap(const std::unique_ptr<imageops::Image> &hdr_image,
     spdlog::debug("HDR {}th-percentile clip value: {}", clip_percentile,
                   clip_value);
 
+    std::vector<colorspace::Color> test_base, test_recon;
     for (size_t i = 0; i < hdr_linear_image.size(); i++) {
         colorspace::Color hdr_rgb = hdr_linear_image[i];
         colorspace::Color sdr_rgb = sdr_gamut_conv(hdr_rgb);
@@ -277,7 +275,7 @@ void HDRToGainMap(const std::unique_ptr<imageops::Image> &hdr_image,
         // we use luminance
         sdr_y_nits =
             bt2100_luminance_fn(sdr_rgb_bt2100) * colorspace::SDR_WHITE_NITS;
-        hdr_y_nits = bt2100_luminance_fn(hdr_rgb) * hdr_peaknits;
+        hdr_y_nits = bt2100_luminance_fn(hdr_rgb) * hdr_peak_nits;
         float gain = ComputeGain(hdr_y_nits, sdr_y_nits);
         min_gain = std::min(gain, min_gain);
         max_gain = std::max(gain, max_gain);
@@ -295,7 +293,7 @@ void HDRToGainMap(const std::unique_ptr<imageops::Image> &hdr_image,
 
     // TODO: if min/max content boost are given
     float min_content_boost = 1.0f;
-    float max_content_boost = hdr_peaknits / colorspace::SDR_WHITE_NITS;
+    float max_content_boost = hdr_peak_nits / colorspace::SDR_WHITE_NITS;
     min_gain = std::min(min_gain, log2f(min_content_boost));
     max_gain = std::max(max_gain, log2f(max_content_boost));
     if (fabs(max_gain - min_gain) < 1.0e-8) {
@@ -306,9 +304,12 @@ void HDRToGainMap(const std::unique_ptr<imageops::Image> &hdr_image,
                   exp2f(min_gain));
 
     for (size_t i = 0; i < gainmap.size(); i++) {
+        // REVISIT:
+        // gainmap[i] = AffineMapGain(gainmap[i], min_gain, max_gain,
+        // map_gamma);
         gainmap[i] = AffineMapGain(gainmap[i], min_gain, max_gain, map_gamma);
-
         float mapped_gain = gainmap[i] * 255.f;
+
         affine_gainmap[i] =
             static_cast<uint8_t>(colorspace::Clip(mapped_gain + 0.5f, 0, 255));
     }
@@ -434,7 +435,8 @@ void HDRToGainMap(const std::unique_ptr<imageops::Image> &hdr_image,
         metadata["clip_percentile"] = clip_percentile;
         metadata["hdr_capacity_min"] = log2f(1.0f);
         metadata["hdr_capacity_max"] =
-            hdr_peaknits / colorspace::SDR_WHITE_NITS;
+            hdr_peak_nits / colorspace::SDR_WHITE_NITS;
+        metadata["hdr_peak_nits"] = hdr_peak_nits;
 
         std::string metadata_path =
             output_dir + "/" + file_stem + "__metadata.json";
@@ -588,7 +590,7 @@ void GainmapSDRToHDR(const std::unique_ptr<imageops::Image> &sdr_image,
 
 void CompareHDRToUHDR(const std::unique_ptr<imageops::Image> &hdr_image,
                       const std::unique_ptr<imageops::Image> &sdr_image,
-                      const std::vector<float> gainmap,
+                      const std::vector<float> affine_gainmap,
                       const std::string &metadata, const std::string &file_stem,
                       const std::string &output_dir, utils::Error &error) {
     if (!hdr_image || !hdr_image->row_pointers) {
@@ -616,13 +618,14 @@ void CompareHDRToUHDR(const std::unique_ptr<imageops::Image> &hdr_image,
     }
 
     float hdr_offset, sdr_offset, map_gamma, min_content_boost,
-        max_content_boost;
+        max_content_boost, hdr_peak_nits;
     try {
         hdr_offset = json_metadata["hdr_offset"].get<float>();
         sdr_offset = json_metadata["sdr_offset"].get<float>();
         map_gamma = json_metadata["map_gamma"].get<float>();
         min_content_boost = json_metadata["min_content_boost"].get<float>();
         max_content_boost = json_metadata["max_content_boost"].get<float>();
+        hdr_peak_nits = json_metadata["hdr_peak_nits"].get<float>();
     } catch (const nlohmann::json::exception &e) {
         error = {true, "Failed to read required fields from metadata: " +
                            std::string(e.what())};
@@ -675,12 +678,13 @@ void CompareHDRToUHDR(const std::unique_ptr<imageops::Image> &hdr_image,
                 ReadPixelFromRow(sdr_row, x, channels, sdr_image->bit_depth);
             colorspace::Color sdr_rgb = sdr_inv_oetf(sdr_rgb_gamma);
             sdr_rgb = sdr_hdr_gamut_conv(sdr_rgb);
-            float sdr_luminance = bt2100_luminance_fn(sdr_rgb);
-            sdr_luminance = sdr_luminance * colorspace::SDR_WHITE_NITS /
-                            colorspace::HLG_MAX_NITS;
-            float recon_nits = RecomputeHDRLuminance(
-                sdr_luminance, gainmap[y * sdr_image->width + x], map_gamma,
-                min_content_boost, max_content_boost, hdr_offset, sdr_offset);
+            float sdr_luminance =
+                bt2100_luminance_fn(sdr_rgb) * colorspace::SDR_WHITE_NITS;
+            float gain_log2 =
+                UndoAffineMapGain(affine_gainmap[y * width + x], map_gamma,
+                                  min_content_boost, max_content_boost);
+            float recon_nits = RecomputeHDRLuminance(sdr_luminance, gain_log2,
+                                                     hdr_offset, sdr_offset);
 
             // colorspace::Color recon_hdr_rgb = ApplyGain(
             //     sdr_rgb, gainmap[y * sdr_image->width + x],
@@ -694,7 +698,7 @@ void CompareHDRToUHDR(const std::unique_ptr<imageops::Image> &hdr_image,
             //                 colorspace::HLG_MAX_NITS;
             // recon_hdr_rgb = Clamp(recon_hdr_rgb);
             reconstructed_image.push_back(
-                colorspace::Color{{{recon_nits, 0.0f, 0.0f}}});
+                colorspace::Color{{{recon_nits / hdr_peak_nits, 0.0f, 0.0f}}});
         }
     }
 
