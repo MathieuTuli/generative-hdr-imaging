@@ -504,6 +504,8 @@ void GainmapSDRToHDR(const std::unique_ptr<imageops::Image> &sdr_image,
     colorspace::ColorTransformFn sdr_gamut_conv =
         colorspace::GetGamutConversionFn(colorspace::Gamut::BT2100,
                                          sdr_image->metadata.gamut);
+    colorspace::LuminanceFn bt2100_luminance_fn =
+        colorspace::GetLuminanceFn(colorspace::Gamut::BT2100);
 
     const size_t channels = 3;
     std::vector<colorspace::Color> hdr_image;
@@ -527,7 +529,7 @@ void GainmapSDRToHDR(const std::unique_ptr<imageops::Image> &sdr_image,
             hdr_rgb =
                 hdr_rgb * colorspace::SDR_WHITE_NITS / colorspace::HLG_MAX_NITS;
             hdr_rgb = Clamp(hdr_rgb);
-            hdr_rgb = colorspace::HLG_InvOOTFApprox(hdr_rgb);
+            hdr_rgb = colorspace::HLG_InvOOTF(hdr_rgb, bt2100_luminance_fn);
             colorspace::Color hdr_rgb_gamma = colorspace::HLG_OETF(hdr_rgb);
             hdr_image.push_back(hdr_rgb_gamma);
         }
@@ -641,8 +643,6 @@ void CompareHDRToUHDR(const std::unique_ptr<imageops::Image> &hdr_image,
         colorspace::GetLuminanceFn(hdr_gamut);
     colorspace::ColorTransformFn hdr_gamut_conv =
         colorspace::GetGamutConversionFn(colorspace::Gamut::BT2100, hdr_gamut);
-    // colorspace::ColorTransformFn hdr_rgb2yuv =
-    //     colorspace::GetRGBToYUVFn(hdr_gamut);
 
     colorspace::LuminanceFn bt2100_luminance_fn =
         colorspace::GetLuminanceFn(colorspace::Gamut::BT2100);
@@ -671,7 +671,6 @@ void CompareHDRToUHDR(const std::unique_ptr<imageops::Image> &hdr_image,
             hdr_rgb = hdr_gamut_conv(hdr_rgb);
             hdr_rgb = colorspace::Clamp(hdr_rgb);
             original_image.push_back(hdr_rgb);
-            // colorspace::Color hdr_yuv = hdr_rgb2yuv(hdr_rgb);
             float hdr_luminance = bt2100_luminance_fn(hdr_rgb);
             original_luminance.push_back(
                 colorspace::Color{{{hdr_luminance, 0.0f, 0.0f}}});
