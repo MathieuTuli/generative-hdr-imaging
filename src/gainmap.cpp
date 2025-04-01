@@ -641,8 +641,8 @@ void CompareHDRToUHDR(const std::unique_ptr<imageops::Image> &hdr_image,
         colorspace::GetLuminanceFn(hdr_gamut);
     colorspace::ColorTransformFn hdr_gamut_conv =
         colorspace::GetGamutConversionFn(colorspace::Gamut::BT2100, hdr_gamut);
-    colorspace::ColorTransformFn hdr_rgb2yuv =
-        colorspace::GetRGBToYUVFn(hdr_gamut);
+    // colorspace::ColorTransformFn hdr_rgb2yuv =
+    //     colorspace::GetRGBToYUVFn(hdr_gamut);
 
     colorspace::LuminanceFn bt2100_luminance_fn =
         colorspace::GetLuminanceFn(colorspace::Gamut::BT2100);
@@ -656,6 +656,7 @@ void CompareHDRToUHDR(const std::unique_ptr<imageops::Image> &hdr_image,
     const size_t width = hdr_image->width;
     const size_t height = hdr_image->height;
     const size_t channels = 3;
+    std::vector<colorspace::Color> original_luminance, reconstructed_luminance;
     std::vector<colorspace::Color> original_image, reconstructed_image;
 
     for (size_t y = 0; y < height; y++) {
@@ -669,15 +670,23 @@ void CompareHDRToUHDR(const std::unique_ptr<imageops::Image> &hdr_image,
             hdr_rgb = hdr_ootf(hdr_rgb, hdr_luminance_fn);
             hdr_rgb = hdr_gamut_conv(hdr_rgb);
             hdr_rgb = colorspace::Clamp(hdr_rgb);
-            colorspace::Color hdr_yuv = hdr_rgb2yuv(hdr_rgb);
+            original_image.push_back(hdr_rgb);
+            // colorspace::Color hdr_yuv = hdr_rgb2yuv(hdr_rgb);
             float hdr_luminance = bt2100_luminance_fn(hdr_rgb);
-            original_image.push_back(
+            original_luminance.push_back(
                 colorspace::Color{{{hdr_luminance, 0.0f, 0.0f}}});
 
             colorspace::Color sdr_rgb_gamma =
                 ReadPixelFromRow(sdr_row, x, channels, sdr_image->bit_depth);
             colorspace::Color sdr_rgb = sdr_inv_oetf(sdr_rgb_gamma);
             sdr_rgb = sdr_hdr_gamut_conv(sdr_rgb);
+
+            colorspace::Color applied_gain = ApplyGain(
+                sdr_rgb, affine_gainmap[y * width + x], map_gamma,
+                min_content_boost, max_content_boost, hdr_offset, sdr_offset);
+            reconstructed_image.push_back(
+                colorspace::Clamp(applied_gain * colorspace::SDR_WHITE_NITS / hdr_peak_nits));
+
             float sdr_luminance =
                 bt2100_luminance_fn(sdr_rgb) * colorspace::SDR_WHITE_NITS;
             float gain_log2 =
@@ -685,24 +694,16 @@ void CompareHDRToUHDR(const std::unique_ptr<imageops::Image> &hdr_image,
                                   min_content_boost, max_content_boost);
             float recon_nits = RecomputeHDRLuminance(sdr_luminance, gain_log2,
                                                      hdr_offset, sdr_offset);
-
-            // colorspace::Color recon_hdr_rgb = ApplyGain(
-            //     sdr_rgb, gainmap[y * sdr_image->width + x],
-            //     sdr_image->metadata.map_gamma,
-            //     sdr_image->metadata.min_content_boost,
-            //     sdr_image->metadata.max_content_boost,
-            //     sdr_image->metadata.hdr_offset,
-            //     sdr_image->metadata.sdr_offset);
-
-            // recon_hdr_rgb = recon_hdr_rgb * colorspace::SDR_WHITE_NITS /
-            //                 colorspace::HLG_MAX_NITS;
-            // recon_hdr_rgb = Clamp(recon_hdr_rgb);
-            reconstructed_image.push_back(
+            reconstructed_luminance.push_back(
                 colorspace::Color{{{recon_nits / hdr_peak_nits, 0.0f, 0.0f}}});
         }
     }
 
-    float psnr = ComputePSNR(original_image, reconstructed_image);
+    float psnr = ComputePSNR(original_luminance, reconstructed_luminance);
+    spdlog::info("PSNR between original luminance and reconstructed luminance: "
+                 "{:.8f} dB",
+                 psnr);
+    psnr = ComputePSNR(original_image, reconstructed_image);
     spdlog::info("PSNR between original HDR and reconstructed HDR: {:.8f} dB",
                  psnr);
 }
