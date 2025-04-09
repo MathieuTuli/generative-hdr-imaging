@@ -103,6 +103,7 @@ float AffineMapGain(float gainlog2, float min_gainlog2, float max_gainlog2,
                     float map_gamma) {
     float mapped_val =
         (gainlog2 - min_gainlog2) / (max_gainlog2 - min_gainlog2);
+    mapped_val = std::clamp(mapped_val, 0.f, 1.f);
     if (map_gamma != 1.0f)
         mapped_val = pow(mapped_val, map_gamma);
     return mapped_val;
@@ -292,10 +293,10 @@ void HDRToGainMap(const std::unique_ptr<imageops::Image> &hdr_image,
     max_gain = (std::clamp)(max_gain, -14.3f, 15.6f);
 
     // TODO: if min/max content boost are given
-    float min_content_boost = 1.0f;
-    float max_content_boost = hdr_peak_nits / colorspace::SDR_WHITE_NITS;
-    min_gain = std::min(min_gain, log2f(min_content_boost));
-    max_gain = std::max(max_gain, log2f(max_content_boost));
+    float min_content_boost = 1.f;
+    float max_content_boost = 8.0f; // colorspace::HLG_MAX_NITS / colorspace::SDR_WHITE_NITS;
+    min_gain = log2f(min_content_boost);
+    max_gain = log2f(max_content_boost);
     if (fabs(max_gain - min_gain) < 1.0e-8) {
         max_gain += 0.1f; // to avoid div by zero during affine transform
     }
@@ -426,16 +427,16 @@ void HDRToGainMap(const std::unique_ptr<imageops::Image> &hdr_image,
     {
         nlohmann::json metadata;
         metadata["max_gain"] = max_gain;
-        metadata["max_content_boost"] = exp2f(max_gain);
+        metadata["max_content_boost"] = max_content_boost;
         metadata["min_gain"] = min_gain;
-        metadata["min_content_boost"] = exp2f(min_gain);
+        metadata["min_content_boost"] = min_content_boost;
         metadata["map_gamma"] = map_gamma;
         metadata["hdr_offset"] = 0.015625f;
         metadata["sdr_offset"] = 0.015625f;
         metadata["clip_percentile"] = clip_percentile;
-        metadata["hdr_capacity_min"] = log2f(1.0f);
-        metadata["hdr_capacity_max"] =
-            hdr_peak_nits / colorspace::SDR_WHITE_NITS;
+        // metadata["hdr_capacity_min"] = log2f(1.0f);
+        // metadata["hdr_capacity_max"] =
+        //    hdr_peak_nits / colorspace::SDR_WHITE_NITS;
         metadata["hdr_peak_nits"] = hdr_peak_nits;
 
         std::string metadata_path =
