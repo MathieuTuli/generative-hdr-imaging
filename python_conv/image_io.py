@@ -1,0 +1,66 @@
+from dataclasses import dataclass
+from pathlib import Path
+
+import subprocess
+import json
+
+import cv2
+
+from utils import Gamut, OETF
+
+
+@dataclass
+class ImageMetadata:
+    gamut: Gamut
+    oetf: OETF
+    bit_depth: int
+    clip_percentile: float = 1.0
+    hdr_offset: float = 0.015625
+    sdr_offset: float = 0.015625
+    min_content_boost: float = 1.0
+    max_content_boost: float = 4.0
+    map_gamma: float = 1.0
+    hdr_capacity_min: float = 1.0
+    hdr_capacity_max: float = 4.0
+
+
+def load_hdr_image(fname: Path):
+    image = cv2.imread(str(fname), cv2.IMREAD_UNCHANGED)
+    image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+    if image is None:
+        raise ValueError(f"Failed to load image from path: {fname}")
+    try:
+        result = subprocess.run(
+            ["exiftool", "-j", fname],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=True,
+            text=True
+        )
+        # Parse the JSON output
+        metadata_list = json.loads(result.stdout)
+        metadata_raw = metadata_list[0] if metadata_list else {}
+    except subprocess.CalledProcessError as e:
+        raise RuntimeError(f"ExifTool returned an error: {e.stderr}")
+
+    bit_depth = metadata_raw["BitDepth"]
+    oetf = metadata_raw["TransferCharacteristics"]
+    if oetf.find("HLG") > 0 or oetf.find("2020") > 0:
+        oetf = OETF.HLG
+    elif oetf.find("PQ") > 0 or oetf.find("2084") > 0:
+        oetf = OETF.PQ
+    elif oetf.find("709") > 0 or oetf.find("sRGB") > 0:
+        oetf = OETF.SRGB
+    else:
+        raise ValueError("Unknown TransferCharacteristics {oetf}")
+    gamut = metadata_raw["ColorPrimaries"]
+    if gamut.find("709") > 0 or gamut.find("sRGB") > 0:
+        gamut = Gamut.BT709
+    elif gamut.find("P3") > 0 or gamut.find("SMPTE") > 0:
+        gamut = Gamut.P3
+    elif gamut.find("2100") > 0 or gamut.find("2020") > 0:
+        gamut = Gamut.BT2100
+    else:
+        raise ValueError("Unknown ColorPrimaries {gamut}")
+    metadata = ImageMetadata(gamut=gamut, oetf=oetf, bit_depth=bit_depth)
+    return image, metadata
