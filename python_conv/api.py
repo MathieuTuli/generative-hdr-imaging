@@ -1,5 +1,9 @@
 from pathlib import Path
 
+import sys
+
+from loguru import logger
+
 import numpy as np
 import fire
 
@@ -18,7 +22,11 @@ def hdr_to_gainmap(
         max_content_boost: float = 4.0,
         map_gamma: float = 1.0,
         hdr_capacity_min: float = 1.0,
-        hdr_capacity_max: float = 4.0):
+        hdr_capacity_max: float = 4.0,
+        debug: bool = False):
+    if not debug:
+        logger.remove()
+        logger.add(sys.stderr, level="INFO")
 
     img_hdr, meta = load_hdr_image(fname)
     meta.clip_percentile = clip_percentile
@@ -45,8 +53,12 @@ def compare_reconstruction(
         hdr_path: Path,
         sdr_path: Path,
         gainmap_path: Path,
-        sdr_metadata: Path
-        ):
+        sdr_metadata: Path,
+        debug: bool = False
+):
+    if not debug:
+        logger.remove()
+        logger.add(sys.stderr, level="INFO")
     img_hdr, hdr_meta = load_hdr_image(hdr_path)
     img_sdr = load_sdr_image(sdr_path)
     sdr_meta = ImageMetadata.from_json(sdr_metadata)
