@@ -1,9 +1,11 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, asdict
 from pathlib import Path
+from typing import Any
 
 import subprocess
 import json
 
+import numpy as np
 import cv2
 
 from utils import Gamut, OETF
@@ -22,6 +24,35 @@ class ImageMetadata:
     map_gamma: float = 1.0
     hdr_capacity_min: float = 1.0
     hdr_capacity_max: float = 4.0
+
+    def save(self, filepath: Path | str) -> None:
+        data = asdict(self)
+        data['gamut'] = self.gamut.name
+        data['oetf'] = self.oetf.name
+        with open(filepath, 'w') as f:
+            json.dump(data, f, indent=2)
+
+    @classmethod
+    def from_json(cls, filepath: Path | str) -> 'ImageMetadata':
+        with open(filepath) as f:
+            data = json.load(f)
+        data['gamut'] = Gamut[data['gamut']]
+        data['oetf'] = OETF[data['oetf']]
+
+        return cls(**data)
+
+    def to_dict(self) -> dict[str, Any]:
+        data = asdict(self)
+        data['gamut'] = self.gamut.name
+        data['oetf'] = self.oetf.name
+        return data
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> 'ImageMetadata':
+        data = data.copy()
+        data['gamut'] = Gamut[data['gamut']]
+        data['oetf'] = OETF[data['oetf']]
+        return cls(**data)
 
 
 def load_hdr_image(fname: Path):
@@ -64,3 +95,21 @@ def load_hdr_image(fname: Path):
         raise ValueError("Unknown ColorPrimaries {gamut}")
     metadata = ImageMetadata(gamut=gamut, oetf=oetf, bit_depth=bit_depth)
     return image, metadata
+
+
+def load_sdr_image(fname: Path):
+    image = cv2.imread(str(fname), cv2.IMREAD_UNCHANGED)
+    image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+    return image
+
+
+def save_npy(fname: Path, data):
+    np.save(fname, data)
+
+
+def save_png(fname: Path, data):
+    if data.dtype not in {np.uint8, np.uint16}:
+        data = cv2.cvtColor(
+            np.clip(data * 255. + 0.5, 0, 255).astype(np.uint8),
+            cv2.COLOR_BGR2RGB)
+    cv2.imwrite(str(fname), data)

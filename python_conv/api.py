@@ -2,14 +2,15 @@ from pathlib import Path
 
 import numpy as np
 import fire
-import cv2
 
-from hdr_to_gainmap import generate_gainmap
-from image_io import load_hdr_image
+from ioops import (ImageMetadata, load_hdr_image,
+                   save_png, save_npy, load_sdr_image)
+from hdr_to_gainmap import generate_gainmap, compare_hdr_to_uhdr
 
 
 def hdr_to_gainmap(
         fname: Path,
+        outdir: Path,
         clip_percentile: float = 0.95,
         hdr_offset: float = 0.015625,
         sdr_offset: float = 0.015625,
@@ -31,15 +32,31 @@ def hdr_to_gainmap(
 
     data = generate_gainmap(img_hdr, meta)
 
-    np.save("gainmap.npy", data["gainmap"][:, :, :1])
-    cv2.imwrite("sdr.png",
-                cv2.cvtColor(
-                    np.clip(data["img_sdr"] * 255. + 0.5, 0, 255).astype(np.uint8),
-                    cv2.COLOR_BGR2RGB))
+    outdir = Path(outdir)
+    outdir.mkdir(parents=True, exist_ok=True)
+    save_npy(outdir / "gainmap.npy", data["gainmap"][:, :, :1])
+    save_npy(outdir / "img_hdr_linear.npy", data["img_hdr_linear"])
+    save_png(outdir / "img_sdr.png", data["img_sdr"])
+    data["hdr_metadata"].save(outdir / "hdr_metadata.json")
+    data["sdr_metadata"].save(outdir / "sdr_metadata.json")
+
+
+def compare_reconstruction(
+        hdr_path: Path,
+        sdr_path: Path,
+        gainmap_path: Path,
+        sdr_metadata: Path
+        ):
+    img_hdr, hdr_meta = load_hdr_image(hdr_path)
+    img_sdr = load_sdr_image(sdr_path)
+    sdr_meta = ImageMetadata.from_json(sdr_metadata)
+    gainmap = np.load(gainmap_path)
+    compare_hdr_to_uhdr(img_hdr, img_sdr, gainmap, hdr_meta, sdr_meta)
 
 
 if __name__ == '__main__':
     fcns = {
         "hdr_to_gainmap": hdr_to_gainmap,
+        "compare_reconstruction": compare_reconstruction,
     }
     fire.Fire(fcns)

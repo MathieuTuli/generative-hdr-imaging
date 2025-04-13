@@ -2,8 +2,8 @@ from loguru import logger
 
 import numpy as np
 
-from image_io import ImageMetadata
-from utils import Gamut, OETF
+from ioops import ImageMetadata
+from metrics import psnr
 import utils
 
 
@@ -27,21 +27,58 @@ def affine_map_gain(gainlog2: float,
     return mapped_val
 
 
+def recompute_hdr_luminance(sdr_luminance: np.ndarray,
+                            gain: np.ndarray,
+                            hdr_offset: float = 0.015625,
+                            sdr_offset: float = 0.015625) -> np.ndarray:
+    gain_factor = np.exp2(gain)
+    return np.multiply(sdr_luminance + sdr_offset, gain_factor) - hdr_offset
+
+
+def undo_affine_map_gain(gain: np.ndarray,
+                         map_gamma: float,
+                         min_content_boost: float,
+                         max_content_boost: float) -> np.ndarray:
+    effective_gain = np.power(
+        gain, 1.0 / map_gamma) if map_gamma != 1.0 else gain
+    log_min = np.log2(min_content_boost)
+    log_max = np.log2(max_content_boost)
+    return np.multiply(log_min, 1.0 - effective_gain
+                       ) + np.multiply(log_max, effective_gain)
+
+
+def apply_gain(e: np.ndarray,
+               gain: np.ndarray,
+               map_gamma: float,
+               min_content_boost: float,
+               max_content_boost: float,
+               hdr_offset: float = 0.015625,
+               sdr_offset: float = 0.015625) -> np.ndarray:
+    effective_gain = np.power(
+        gain, 1.0 / map_gamma) if map_gamma != 1.0 else gain
+    log_min = np.log2(min_content_boost)
+    log_max = np.log2(max_content_boost)
+    log_boost = np.multiply(log_min, 1.0 - effective_gain) + \
+        np.multiply(log_max, effective_gain)
+    gain_factor = np.exp2(log_boost)
+    return np.multiply(e + sdr_offset, gain_factor) - hdr_offset
+
+
 def generate_gainmap(img_hdr: np.ndarray,
                      meta: ImageMetadata,
                      ):
     hdr_inv_oetf = utils.GetInvOETFFn(meta.oetf)
     hdr_ootf = utils.GetOOTFFn(meta.oetf)
-    hdr_gamut_conv = utils.GetGamutConversionFn(Gamut.BT2100, meta.gamut)
+    hdr_gamut_conv = utils.GetGamutConversionFn(utils.Gamut.BT2100, meta.gamut)
     hdr_luminance_fn = utils.GetLuminanceFn(meta.gamut)
-    bt2100_luminance_fn = utils.GetLuminanceFn(Gamut.BT2100)
+    bt2100_luminance_fn = utils.GetLuminanceFn(utils.Gamut.BT2100)
     hdr_peak_nits = utils.GetReferenceDisplayPeakLuminanceInNits(meta.oetf)
-    sdr_gamut_conv = utils.GetGamutConversionFn(src_gamut=Gamut.BT2100,
-                                                dst_gamut=Gamut.BT709)
-    sdr_inv_oetf = utils.GetInvOETFFn(OETF.SRGB)
-    sdr_oetf = utils.GetOETFFn(OETF.SRGB)
-    sdr_hdr_gamut_conv = utils.GetGamutConversionFn(src_gamut=Gamut.BT709,
-                                                    dst_gamut=Gamut.BT2100)
+    sdr_gamut_conv = utils.GetGamutConversionFn(src_gamut=utils.Gamut.BT2100,
+                                                dst_gamut=utils.Gamut.BT709)
+    sdr_inv_oetf = utils.GetInvOETFFn(utils.OETF.SRGB)
+    sdr_oetf = utils.GetOETFFn(utils.OETF.SRGB)
+    sdr_hdr_gamut_conv = utils.GetGamutConversionFn(src_gamut=utils.Gamut.BT709,
+                                                    dst_gamut=utils.Gamut.BT2100)
 
     height, width, channels = img_hdr.shape
     logger.debug(
@@ -49,10 +86,6 @@ def generate_gainmap(img_hdr: np.ndarray,
 
     img_hdr_norm = img_hdr.astype(np.float32) / \
         float((1 << meta.bit_depth) - 1)
-    img_hdr_linear = np.full_like(img_hdr, -1, dtype=np.float32)
-    img_sdr = np.full_like(img_hdr, -1, dtype=np.float32)
-    gainmap = np.full_like(img_hdr, -1, dtype=np.float32)
-    gainmap_affine = np.full_like(img_hdr, -1, dtype=np.uint8)
 
     img_hdr_linear = hdr_inv_oetf(img_hdr_norm)
     img_hdr_linear = hdr_ootf(img_hdr_linear, hdr_luminance_fn)
@@ -102,13 +135,110 @@ def generate_gainmap(img_hdr: np.ndarray,
         f"max/min gain (exp2): {np.exp2(max_gain)}/{np.exp2(min_gain)}")
 
     gainmap = affine_map_gain(gainmap, min_gain, max_gain, meta.map_gamma)
-    mapped_gain = gainmap * 255.
-    gainmap_affine = np.clip(mapped_gain + 0.5, 0, 255).astype(np.uint8)
 
+    sdr_meta = ImageMetadata.from_dict(meta.to_dict())
+    sdr_meta.gamut = utils.Gamut.BT709
+    sdr_meta.oetf = utils.OETF.SRGB
+    sdr_meta.bit_depth = 8
     return {
         "gainmap": gainmap,
-        "gainmap_affine": gainmap_affine,
         "img_hdr_linear": img_hdr_linear,
         "img_sdr": img_sdr,
-        "metadata": meta
+        "hdr_metadata": meta,
+        "sdr_metadata": sdr_meta
+    }
+
+
+def gainmap_sdr_to_hdr(img_sdr: np.ndarray,
+                       gainmap: np.ndarray,
+                       meta: ImageMetadata):
+
+    sdr_gamut_conv = utils.GetGamutConversionFn(
+        src_gamut=meta.gamut,
+        dst_gamut=utils.Gamut.BT2100)
+    bt2100_luminance_fn = utils.GetLuminanceFn(utils.Gamut.BT2100)
+    sdr_gamut_conv = utils.GetGamutConversionFn(meta.gamut)
+    # REVISIT: right now hard coded, but for comparison, it should be the
+    # input HDR transfer
+    hdr_inv_ootf = utils.GetInvOOTFFn(utils.OETF.HLG)
+    hdr_oetf = utils.GetOETFFn(utils.OETF.HLG)
+    hdr_peak_nits = utils.GetReferenceDisplayPeakLuminanceInNits(
+        utils.OETF.HLG)
+
+    sdr_inv_oetf = utils.GetInvOETFFn(meta.oetf)
+    sdr_gamut_conv = utils.GetGamutConversionFn(
+        src_gamut=meta.gamut, dst_gamut=utils.Gamut.BT2100)
+
+    img_sdr_lin = sdr_inv_oetf(img_sdr)
+    img_sdr_lin = sdr_gamut_conv(img_sdr_lin)
+    img_hdr_lin = apply_gain(
+        img_sdr_lin, gainmap,
+        meta.map_gamma,
+        meta.min_content_boost,
+        meta.max_content_boost,
+        meta.hdr_offset,
+        meta.sdr_offset
+    )
+    img_hdr_lin = img_hdr_lin * utils.SDR_WHITE_NITS / hdr_peak_nits
+    img_hdr_lin = np.clip(img_hdr_lin, 0., 1.)
+    img_hdr = hdr_inv_ootf(img_hdr_lin, bt2100_luminance_fn)
+    img_hdr = hdr_oetf(img_hdr)
+
+    return {"img_hdr": img_hdr}
+
+
+def compare_hdr_to_uhdr(img_hdr: np.ndarray,
+                        img_sdr: np.ndarray,
+                        gainmap: np.ndarray,
+                        hdr_meta: ImageMetadata,
+                        sdr_meta: ImageMetadata):
+    hdr_inv_oetf = utils.GetInvOETFFn(hdr_meta.oetf)
+    hdr_ootf = utils.GetOOTFFn(hdr_meta.oetf)
+    hdr_luminance_fn = utils.GetLuminanceFn(hdr_meta.gamut)
+    hdr_gamut_conv = utils.GetGamutConversionFn(src_gamut=hdr_meta.gamut,
+                                                dst_gamut=utils.Gamut.BT2100)
+    hdr_peak_nits = utils.GetReferenceDisplayPeakLuminanceInNits(hdr_meta.oetf)
+
+    bt2100_luminance_fn = utils.GetLuminanceFn(utils.Gamut.BT2100)
+    sdr_inv_oetf = utils.GetInvOETFFn(sdr_meta.oetf)
+    sdr_hdr_gamut_conv = utils.GetGamutConversionFn(
+        src_gamut=sdr_meta.gamut, dst_gamut=utils.Gamut.BT2100)
+
+    img_hdr_norm = img_hdr.astype(np.float32) / \
+        float((1 << hdr_meta.bit_depth) - 1)
+    img_sdr_norm = img_sdr.astype(np.float32) / \
+        float((1 << sdr_meta.bit_depth) - 1)
+
+    img_hdr_lin = hdr_inv_oetf(img_hdr_norm)
+    img_hdr_lin = hdr_ootf(img_hdr_lin, hdr_luminance_fn)
+    img_hdr_lin = hdr_gamut_conv(img_hdr_lin)
+    img_hdr_lin = np.clip(img_hdr_lin, 0., 1.)
+    img_hdr_lum = bt2100_luminance_fn(img_hdr_lin)
+
+    img_sdr_lin = sdr_inv_oetf(img_sdr_norm)
+    img_sdr_lin = sdr_hdr_gamut_conv(img_sdr_lin)
+    img_hdr_recon = apply_gain(
+        img_sdr_lin, gainmap, sdr_meta.map_gamma,
+        sdr_meta.min_content_boost, sdr_meta.max_content_boost,
+        sdr_meta.hdr_offset, sdr_meta.sdr_offset)
+    img_hdr_recon *= utils.SDR_WHITE_NITS / hdr_peak_nits
+    img_hdr_recon = np.clip(img_hdr_recon, 0., 1.)
+
+    img_sdr_lum = bt2100_luminance_fn(img_sdr_lin) * utils.SDR_WHITE_NITS
+    gain_log2 = undo_affine_map_gain(gainmap, sdr_meta.map_gamma,
+                                     sdr_meta.min_content_boost,
+                                     sdr_meta.max_content_boost)
+    img_hdr_recon_lum = recompute_hdr_luminance(
+        img_sdr_lum, gain_log2, sdr_meta.hdr_offset, sdr_meta.sdr_offset)
+    img_hdr_recon_lum /= hdr_peak_nits
+
+    psnr_lum = psnr(img_hdr_lum, img_hdr_recon_lum)
+    psnr_img = psnr(img_hdr_lin, img_hdr_recon)
+
+    logger.info(f"PSNR luminance: {psnr_lum}dB")
+    logger.info(f"PSNR image: {psnr_img}dB")
+
+    return {
+        "psnr_lum": psnr_lum,
+        "psnr_img": psnr_img,
     }

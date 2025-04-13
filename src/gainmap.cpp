@@ -39,7 +39,7 @@ float ComputePSNR(const std::vector<colorspace::Color> &original,
     }
 
     double mse =
-        (mse_r + mse_g + mse_b) / (static_cast<float>(original.size()) * 3.0f);
+        (mse_r + mse_g + mse_b) / (static_cast<float>(original.size()) * 1.0f);
 
     if (mse < 1e-10) {
         return 100.0f;
@@ -218,8 +218,6 @@ void HDRToGainMap(const std::unique_ptr<imageops::Image> &hdr_image,
 
             colorspace::Color hdr_rgb = hdr_inv_oetf(hdr_rgb_gamma);
             hdr_rgb = hdr_ootf(hdr_rgb, hdr_luminance_fn);
-            if (y * width + x < 10)
-                spdlog::info("{} {} {}", hdr_rgb.r, hdr_rgb.g, hdr_rgb.b);
             hdr_rgb = hdr_gamut_conv(hdr_rgb);
             hdr_rgb = colorspace::ClipNegatives(hdr_rgb);
             hdr_linear_image.push_back(hdr_rgb);
@@ -696,6 +694,8 @@ void CompareHDRToUHDR(const std::unique_ptr<imageops::Image> &hdr_image,
                                   min_content_boost, max_content_boost);
             float recon_nits = RecomputeHDRLuminance(sdr_luminance, gain_log2,
                                                      hdr_offset, sdr_offset);
+            if (y * width + x < 10)
+                spdlog::info("{} {}", hdr_luminance, recon_nits / hdr_peak_nits);
             reconstructed_luminance.push_back(
                 colorspace::Color{{{recon_nits / hdr_peak_nits, 0.0f, 0.0f}}});
         }

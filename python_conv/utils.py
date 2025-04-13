@@ -594,6 +594,18 @@ def GetInvOETFFn(transfer: OETF) -> ColorTransformFn:
     raise ValueError(f"Unknown oetf {transfer}")
 
 
+def GetInvOOTFFn(transfer: OETF) -> SceneToDisplayLuminanceFn:
+    if transfer == OETF.LINEAR:
+        return IdentityOOTF
+    elif transfer == OETF.HLG:
+        return HLG_InvOOTFApprox if USE_HLG_OOTF_APPROX else HLG_InvOOTF
+    elif transfer == OETF.PQ:
+        return IdentityOOTF
+    elif transfer == OETF.SRGB:
+        return IdentityOOTF
+    raise ValueError(f"Unknown oetf {transfer}")
+
+
 def GetOOTFFn(transfer: OETF) -> SceneToDisplayLuminanceFn:
     if transfer == OETF.LINEAR:
         return IdentityOOTF
