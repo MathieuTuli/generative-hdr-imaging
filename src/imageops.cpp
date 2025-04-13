@@ -201,6 +201,8 @@ ImageMetadata ReadMetadata(const std::string &filename, utils::Error &error) {
         return metadata;
     }
 
+    metadata.oetf = colorspace::OETF::SRGB;
+    metadata.gamut = colorspace::Gamut::BT709;
     if (!info) {
         if (et->LastComplete() <= 0) {
             error = {true, "Error executing exiftool!"};

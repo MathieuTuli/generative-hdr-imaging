@@ -578,8 +578,8 @@ SceneToDisplayLuminanceFn GetOOTFFn(OETF transfer) {
     case OETF::LINEAR:
         return IdentityOOTF;
     case OETF::HLG:
-        // return HLG_OOTFApprox;
         return HLG_OOTFApprox;
+        // return HLG_OOTF;
     case OETF::PQ:
         return IdentityOOTF;
     case OETF::SRGB:

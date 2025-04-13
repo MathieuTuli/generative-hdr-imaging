@@ -218,6 +218,8 @@ void HDRToGainMap(const std::unique_ptr<imageops::Image> &hdr_image,
 
             colorspace::Color hdr_rgb = hdr_inv_oetf(hdr_rgb_gamma);
             hdr_rgb = hdr_ootf(hdr_rgb, hdr_luminance_fn);
+            if (y * width + x < 10)
+                spdlog::info("{} {} {}", hdr_rgb.r, hdr_rgb.g, hdr_rgb.b);
             hdr_rgb = hdr_gamut_conv(hdr_rgb);
             hdr_rgb = colorspace::ClipNegatives(hdr_rgb);
             hdr_linear_image.push_back(hdr_rgb);
@@ -434,9 +436,9 @@ void HDRToGainMap(const std::unique_ptr<imageops::Image> &hdr_image,
         metadata["hdr_offset"] = 0.015625f;
         metadata["sdr_offset"] = 0.015625f;
         metadata["clip_percentile"] = clip_percentile;
-        // metadata["hdr_capacity_min"] = log2f(1.0f);
-        // metadata["hdr_capacity_max"] =
-        //    hdr_peak_nits / colorspace::SDR_WHITE_NITS;
+        metadata["hdr_capacity_min"] = log2f(1.0f);
+        metadata["hdr_capacity_max"] =
+           hdr_peak_nits / colorspace::SDR_WHITE_NITS;
         metadata["hdr_peak_nits"] = hdr_peak_nits;
 
         std::string metadata_path =
