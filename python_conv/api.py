@@ -24,12 +24,12 @@ def hdr_to_gainmap(
     meta.hdr_offset = hdr_offset
     meta.sdr_offset = sdr_offset
     meta.min_content_boost = min_content_boost
-    meta.max_content_boost = max_content_boost
+    meta.max_content_boost = 8
     meta.map_gamma = map_gamma
     meta.hdr_capacity_min = hdr_capacity_min
     meta.hdr_capacity_max = hdr_capacity_max
 
-    data = generate_gainmap(fname, clip_percentile, map_gamma, 1, 8)
+    data = generate_gainmap(img_hdr, meta)
 
     np.save("gainmap.npy", data["gainmap"][:, :, :1])
     cv2.imwrite("sdr.png",

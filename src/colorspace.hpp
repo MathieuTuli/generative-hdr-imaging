@@ -6,12 +6,12 @@
 #include <iostream>
 #include <memory>
 
-#define USE_SRGB_INVOETF_LUT 1
-#define USE_HLG_OETF_LUT 1
-#define USE_PQ_OETF_LUT 1
-#define USE_HLG_INVOETF_LUT 1
-#define USE_PQ_INVOETF_LUT 1
-#define USE_APPLY_GAIN_LUT 1
+#define USE_SRGB_INVOETF_LUT 0
+#define USE_HLG_OETF_LUT 0
+#define USE_PQ_OETF_LUT 0
+#define USE_HLG_INVOETF_LUT 0
+#define USE_PQ_INVOETF_LUT 0
+#define USE_APPLY_GAIN_LUT 0
 
 struct Image;
 

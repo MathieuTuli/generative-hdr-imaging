@@ -1,6 +1,5 @@
 from typing import Callable, List
 from enum import Enum, auto
-import math
 import numpy as np
 
 # --- Types ---
@@ -10,13 +9,13 @@ SceneToDisplayLuminanceFn = Callable[[np.ndarray, LuminanceFn], np.ndarray]
 
 # -- Control Variables ---
 USE_SRGB_OETF_LUT = False
-USE_HLG_OETF_LUT = True
-USE_PQ_OETF_LUT = True
-USE_SRGB_INVOETF_LUT = True
-USE_HLG_INVOETF_LUT = True
-USE_PQ_INVOETF_LUT = True
-USE_APPLY_GAIN_LUT = True
-USE_HLG_OOTF_APPROX = True
+USE_HLG_OETF_LUT = False
+USE_PQ_OETF_LUT = False
+USE_SRGB_INVOETF_LUT = False
+USE_HLG_INVOETF_LUT = False
+USE_PQ_INVOETF_LUT = False
+USE_APPLY_GAIN_LUT = False
+USE_HLG_OOTF_APPROX = False
 
 # --- LUT Precision Constants ---
 SRGB_INV_OETF_PRECISION = 10
@@ -132,8 +131,7 @@ SRGB_B = 0.072192
 
 
 def sRGBLuminance(e: np.ndarray) -> float:
-    r, g, b = e
-    return SRGB_R * r + SRGB_G * g + SRGB_B * b
+    return np.matmul(e, np.array([SRGB_R, SRGB_G, SRGB_B]))[..., None]
 
 
 SRGB_CB = 2.0 * (1.0 - SRGB_B)
@@ -142,10 +140,10 @@ SRGB_CR = 2.0 * (1.0 - SRGB_R)
 
 def sRGB_RGBToYUV(e_gamma: np.ndarray) -> np.ndarray:
     y_gamma = sRGBLuminance(e_gamma)
-    r, g, b = e_gamma
-    return np.array(y_gamma,
-                    (b - y_gamma) / SRGB_CB,
-                    (r - y_gamma) / SRGB_CR)
+    return np.concatenate(
+        y_gamma[..., None],
+        ((e_gamma[:, :, 2] - y_gamma) / SRGB_CB)[..., None],
+        ((e_gamma[:, :, 0] - y_gamma) / SRGB_CR)[..., None], axis=2)
 
 
 SRGB_GCB = SRGB_B * SRGB_CB / SRGB_G
@@ -153,44 +151,50 @@ SRGB_GCR = SRGB_R * SRGB_CR / SRGB_G
 
 
 def sRGB_YUVToRGB(e_gamma: np.ndarray) -> np.ndarray:
-    y, u, v = e_gamma
-    return np.clip([y + SRGB_CR * v,
-                    y - SRGB_GCB * u - SRGB_GCR * v,
-                    y + SRGB_CB * u], 0.0, 1.0)
+    y = e_gamma[..., 0]
+    u = e_gamma[..., 1]
+    v = e_gamma[..., 2]
+    rgb = np.empty_like(e_gamma)
+    rgb[..., 0] = y + SRGB_CR * v  # R
+    rgb[..., 1] = y - SRGB_GCB * u - SRGB_GCR * v  # G
+    rgb[..., 2] = y + SRGB_CB * u  # B
+    return np.clip(rgb, 0.0, 1.0)
 
 
-def sRGB_InvOETF(e_gamma: float | np.ndarray) -> float:
-    if isinstance(e_gamma, np.ndarray):
-        return np.array([sRGB_InvOETF(x) for x in e_gamma])
-    if e_gamma <= 0.04045:
-        return e_gamma / 12.92
-    else:
-        return ((e_gamma + 0.055) / 1.055) ** 2.4
+def sRGB_InvOETF(e_gamma: np.ndarray) -> np.ndarray:
+    result = np.empty_like(e_gamma)
+    mask_low = e_gamma <= 0.04045
+    mask_high = ~mask_low
+    result[mask_low] = e_gamma[mask_low] / 12.92
+    result[mask_high] = ((e_gamma[mask_high] + 0.055) / 1.055) ** 2.4
+    return result
 
 
-def sRGB_InvOETFLUT(e_gamma: float | np.ndarray) -> float:
-    if isinstance(e_gamma, np.ndarray):
-        return np.array([sRGB_InvOETFLUT(x) for x in e_gamma])
+# DEPRECATE:
+@np.vectorize
+def sRGB_InvOETFLUT(e_gamma: float) -> float:
     value = safe_int(e_gamma * (SRGB_INV_OETF_NUMENTRIES - 1))
     value = np.clip(value, 0, SRGB_INV_OETF_NUMENTRIES - 1)
     return get_kSrgbLut().get_table()[value]
 
 
-def sRGB_OETF(e: float | np.ndarray) -> float:
-    if isinstance(e, np.ndarray):
-        return np.array([sRGB_OETF(x) for x in e])
+def sRGB_OETF(e: np.ndarray) -> np.ndarray:
     threshold = 0.0031308
     low_slope = 12.92
     high_offset = 0.055
     power_exponent = 1.0 / 2.4
-    if e <= threshold:
-        return low_slope * e
-    return (1.0 + high_offset) * (e ** power_exponent) - high_offset
+    result = np.empty_like(e)
+    mask_low = e <= threshold
+    mask_high = ~mask_low
+    result[mask_low] = low_slope * e[mask_low]
+    result[mask_high] = (1.0 + high_offset) * \
+        (e[mask_high] ** power_exponent) - high_offset
+    return result
 
 
-def sRGB_OETFLUT(e: float | np.ndarray) -> float:
-    if isinstance(e, np.ndarray):
-        return np.array([sRGB_OETFLUT(x) for x in e])
+# DEPRECATE:
+@np.vectorize
+def sRGB_OETFLUT(e: float) -> float:
     raise NotImplementedError
 
 
@@ -204,8 +208,7 @@ P3_B = 0.0792869
 
 
 def P3Luminance(e: np.ndarray) -> float:
-    r, g, b = e
-    return P3_R * r + P3_G * g + P3_B * b
+    return np.matmul(e, np.array([P3_R, P3_G, P3_B]))[..., None]
 
 
 P3_YR = 0.299
@@ -216,11 +219,15 @@ P3_CR = 1.402
 
 
 def P3_RGBToYUV(e_gamma: np.ndarray) -> np.ndarray:
-    r, g, b = e_gamma
-    y_gamma = P3_YR * r + P3_YG * g + P3_YB * b
-    return np.array(y_gamma,
-                    (b - y_gamma) / P3_CB,
-                    (r - y_gamma) / P3_CR)
+    y_gamma = (P3_YR * e_gamma[..., 0] +
+               P3_YG * e_gamma[..., 1] +
+               P3_YB * e_gamma[..., 2])
+
+    yuv = np.empty_like(e_gamma)
+    yuv[..., 0] = y_gamma
+    yuv[..., 1] = (e_gamma[..., 2] - y_gamma) / P3_CB  # U component
+    yuv[..., 2] = (e_gamma[..., 0] - y_gamma) / P3_CR  # V component
+    return yuv
 
 
 P3_GCB = P3_YB * P3_CB / P3_YG
@@ -228,10 +235,12 @@ P3_GCR = P3_YR * P3_CR / P3_YG
 
 
 def P3_YUVToRGB(e_gamma: np.ndarray) -> np.ndarray:
-    y, u, v = e_gamma
-    return np.clip(y + P3_CR * v,
-                   y - P3_GCB * u - P3_GCR * v,
-                   y + P3_CB * u)
+    rgb = np.empty_like(e_gamma)
+    rgb[..., 0] = e_gamma[..., 0] + P3_CR * e_gamma[..., 2]  # R
+    rgb[..., 1] = e_gamma[..., 0] - P3_GCB * \
+        e_gamma[..., 1] - P3_GCR * e_gamma[..., 2]  # G
+    rgb[..., 2] = e_gamma[..., 0] + P3_CB * e_gamma[..., 1]  # B
+    return np.clip(rgb, 0.0, 1.0)
 
 # ==============================================================================
 # BT.2100 Transformations
@@ -244,8 +253,7 @@ BT2100_B = 0.059302
 
 
 def Bt2100Luminance(e: np.ndarray) -> float:
-    r, g, b = e
-    return BT2100_R * r + BT2100_G * g + BT2100_B * b
+    return np.matmul(e, np.array([BT2100_R, BT2100_G, BT2100_B]))[..., None]
 
 
 BT2100_CB = 2.0 * (1.0 - BT2100_B)
@@ -254,10 +262,11 @@ BT2100_CR = 2.0 * (1.0 - BT2100_R)
 
 def Bt2100_RGBToYUV(e_gamma: np.ndarray) -> np.ndarray:
     y_gamma = Bt2100Luminance(e_gamma)
-    r, g, b = e_gamma
-    return np.array(y_gamma,
-                    (b - y_gamma) / BT2100_CB,
-                    (r - y_gamma) / BT2100_CR)
+    yuv = np.empty_like(e_gamma)
+    yuv[..., 0] = y_gamma
+    yuv[..., 1] = (e_gamma[..., 2] - y_gamma) / BT2100_CB
+    yuv[..., 2] = (e_gamma[..., 0] - y_gamma) / BT2100_CR
+    return yuv
 
 
 BT2100_GCB = BT2100_B * BT2100_CB / BT2100_G
@@ -265,10 +274,12 @@ BT2100_GCR = BT2100_R * BT2100_CR / BT2100_G
 
 
 def Bt2100_YUVToRGB(e_gamma: np.ndarray) -> np.ndarray:
-    y, u, v = e_gamma
-    return np.clip(y + BT2100_CR * v,
-                   y - BT2100_GCB * u - BT2100_GCR * v,
-                   y + BT2100_CB * u)
+    rgb = np.empty_like(e_gamma)
+    rgb[..., 0] = e_gamma[..., 0] + BT2100_CR * e_gamma[..., 2]  # R
+    rgb[..., 1] = e_gamma[..., 0] - BT2100_GCB * \
+        e_gamma[..., 1] - BT2100_GCR * e_gamma[..., 2]  # G
+    rgb[..., 2] = e_gamma[..., 0] + BT2100_CB * e_gamma[..., 1]  # B
+    return np.clip(rgb, 0.0, 1.0)
 
 # ==============================================================================
 # HLG Transformations
@@ -280,38 +291,35 @@ HLG_B = 0.28466892
 HLG_C = 0.55991073
 
 
-def HLG_OETF(e: float | np.ndarray) -> float:
-    if isinstance(e, np.ndarray):
-        return np.array([HLG_OETF(x) for x in e])
-    if e <= 1.0 / 12.0:
-        return np.sqrt(3.0 * e)
-    else:
-        return HLG_A * np.log(12.0 * e - HLG_B) + HLG_C
+def HLG_OETF(e: np.ndarray) -> np.ndarray:
+    result = np.empty_like(e)
+    mask_low = e <= 1.0 / 12.0
+    mask_high = ~mask_low
+    result[mask_low] = np.sqrt(3.0 * e[mask_low])
+    result[mask_high] = HLG_A * np.log(12.0 * e[mask_high] - HLG_B) + HLG_C
+    return result
 
 
-def HLG_OETFLUT(e: float | np.ndarray) -> float:
-    if isinstance(e, np.ndarray):
-        return np.array([HLG_OETFLUT(x) for x in e])
+# DEPRECATE:
+def HLG_OETFLUT(e: float) -> float:
     value = safe_int(e * (HLG_OETF_NUMENTRIES - 1))
     value = np.clip(value, 0, HLG_OETF_NUMENTRIES - 1)
     return get_kHlgLut().get_table()[value]
 
 
-def HLG_InvOETF(e_gamma: float | np.ndarray) -> float:
-    if isinstance(e_gamma, np.ndarray):
-        return np.array([HLG_InvOETF(x) for x in e_gamma])
-    HLG_A = 0.17883277
-    HLG_B = 0.28466892
-    HLG_C = 0.55991073
-    if e_gamma <= 0.5:
-        return (e_gamma ** 2) / 3.0
-    else:
-        return (math.exp((e_gamma - HLG_C) / HLG_A) + HLG_B) / 12.0
+def HLG_InvOETF(e_gamma: float) -> float:
+    result = np.empty_like(e_gamma)
+    mask_low = e_gamma <= 0.5
+    mask_high = ~mask_low
+    result[mask_low] = (e_gamma[mask_low] ** 2) / 3.0
+    result[mask_high] = (
+        np.exp((e_gamma[mask_high] - HLG_C) / HLG_A) + HLG_B) / 12.0
+    return result
 
 
-def HLG_InvOETFLUT(e_gamma: float | np.ndarray) -> float:
-    if isinstance(e_gamma, np.ndarray):
-        return np.array([HLG_InvOETFLUT(x) for x in e_gamma])
+# DEPRECATE:
+@np.vectorize
+def HLG_InvOETFLUT(e_gamma: float) -> float:
     value = safe_int(e_gamma * (HLG_INV_OETF_NUMENTRIES - 1))
     value = np.clip(value, 0, HLG_INV_OETF_NUMENTRIES - 1)
     return get_kHlgInvLut().get_table()[value]
@@ -350,32 +358,35 @@ PQ_C2 = (2413.0 / 4096.0) * 32.0
 PQ_C3 = (2392.0 / 4096.0) * 32.0
 
 
-def PQ_OETF(e: float | np.ndarray) -> float:
-    if isinstance(e, np.ndarray):
-        return np.array([PQ_OETF(x) for x in e])
-    if e <= 0.0:
-        return 0.0
-    return ((PQ_C1 + PQ_C2 * (e ** PQ_M1)) / (1 + PQ_C3 * (e ** PQ_M1))) ** PQ_M2
+def PQ_OETF(e: np.ndarray) -> np.ndarray:
+    result = np.zeros_like(e)
+    mask = e > 0.0
+    e_masked = e[mask]
+    e_m1 = e_masked ** PQ_M1
+    numerator = PQ_C1 + PQ_C2 * e_m1
+    denominator = 1.0 + PQ_C3 * e_m1
+    result[mask] = (numerator / denominator) ** PQ_M2
+    return result
 
 
-def PQ_OETFLUT(e: float | np.ndarray) -> float:
-    if isinstance(e, np.ndarray):
-        return np.array([PQ_OETFLUT(x) for x in e])
+# DEPRECATE:
+@np.vectorize
+def PQ_OETFLUT(e: float) -> float:
     value = safe_int(e * (PQ_OETF_NUMENTRIES - 1))
     value = np.clip(value, 0, PQ_OETF_NUMENTRIES - 1)
     return get_kPqLut().get_table()[value]
 
 
-def PQ_InvOETF(e_gamma: float | np.ndarray) -> float:
-    if isinstance(e_gamma, np.ndarray):
-        return np.array([PQ_InvOETF(x) for x in e_gamma])
-    val = e_gamma ** (1 / PQ_M2)
-    return ((max(val - PQ_C1, 0.0)) / (PQ_C2 - PQ_C3 * val)) ** (1.0 / PQ_M1)
+def PQ_InvOETF(e_gamma: np.ndarray) -> np.ndarray:
+    val = np.power(e_gamma, 1.0 / PQ_M2)
+    numerator = np.maximum(val - PQ_C1, 0.0)
+    denominator = PQ_C2 - PQ_C3 * val
+    return np.power(numerator / denominator, 1.0 / PQ_M1)
 
 
-def PQ_InvOETFLUT(e_gamma: float | np.ndarray) -> float:
-    if isinstance(e_gamma, np.ndarray):
-        return np.array([PQ_InvOETFLUT(x) for x in e_gamma])
+# DEPRECATE:
+@np.vectorize
+def PQ_InvOETFLUT(e_gamma: float) -> float:
     value = safe_int(e_gamma * (PQ_INV_OETF_NUMENTRIES - 1))
     value = np.clip(value, 0, PQ_INV_OETF_NUMENTRIES - 1)
     return get_kPqInvLut().get_table()[value]
@@ -387,7 +398,8 @@ def PQ_InvOETFLUT(e_gamma: float | np.ndarray) -> float:
 
 
 def ConvertGamut(e: np.ndarray, coeffs: np.ndarray) -> np.ndarray:
-    return np.matmul(coeffs, e)
+    return np.matmul(coeffs[None, None, ...],
+                     e[..., None]).squeeze(-1)
 
 
 # Conversion matrices (provided as lists of 9 floats)
