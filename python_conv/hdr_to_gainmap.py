@@ -157,38 +157,25 @@ def gainmap_sdr_to_hdr(img_sdr: torch.Tensor,
                        gainmap: torch.Tensor,
                        meta: ImageMetadata):
 
-    sdr_gamut_conv = utils.GetGamutConversionFn(
-        src_gamut=meta.gamut,
-        dst_gamut=utils.Gamut.BT2100)
-    bt2100_luminance_fn = utils.GetLuminanceFn(utils.Gamut.BT2100)
-    sdr_gamut_conv = utils.GetGamutConversionFn(meta.gamut)
-    # REVISIT: right now hard coded, but for comparison, it should be the
-    # input HDR transfer
-    hdr_inv_ootf = utils.GetInvOOTFFn(utils.OETF.HLG)
-    hdr_oetf = utils.GetOETFFn(utils.OETF.HLG)
     hdr_peak_nits = utils.GetReferenceDisplayPeakLuminanceInNits(
         utils.OETF.HLG)
 
     sdr_inv_oetf = utils.GetInvOETFFn(meta.oetf)
-    sdr_gamut_conv = utils.GetGamutConversionFn(
+    sdr_hdr_gamut_conv = utils.GetGamutConversionFn(
         src_gamut=meta.gamut, dst_gamut=utils.Gamut.BT2100)
 
-    img_sdr_lin = sdr_inv_oetf(img_sdr)
-    img_sdr_lin = sdr_gamut_conv(img_sdr_lin)
-    img_hdr_lin = apply_gain(
-        img_sdr_lin, gainmap,
-        meta.map_gamma,
-        meta.min_content_boost,
-        meta.max_content_boost,
-        meta.hdr_offset,
-        meta.sdr_offset
-    )
-    img_hdr_lin = img_hdr_lin * utils.SDR_WHITE_NITS / hdr_peak_nits
-    img_hdr_lin = torch.clip(img_hdr_lin, 0., 1.)
-    img_hdr = hdr_inv_ootf(img_hdr_lin, bt2100_luminance_fn)
-    img_hdr = hdr_oetf(img_hdr)
+    img_sdr_norm = img_sdr.to(torch.float32) / \
+        float((1 << meta.bit_depth) - 1)
+    img_sdr_lin = sdr_inv_oetf(img_sdr_norm)
+    img_sdr_lin = sdr_hdr_gamut_conv(img_sdr_lin)
+    img_hdr_recon = apply_gain(
+        img_sdr_lin, gainmap, meta.map_gamma,
+        meta.min_content_boost, meta.max_content_boost,
+        meta.hdr_offset, meta.sdr_offset)
+    img_hdr_recon *= utils.SDR_WHITE_NITS / hdr_peak_nits
+    img_hdr_recon = torch.clip(img_hdr_recon, 0., 1.)
 
-    return {"img_hdr": img_hdr}
+    return {"img_hdr_lin": img_hdr_recon}
 
 
 def compare_hdr_to_uhdr(img_hdr: torch.Tensor,
