@@ -4,11 +4,11 @@ import sys
 
 from loguru import logger
 
-import numpy as np
+import torch
 import fire
 
 from ioops import (ImageMetadata, load_hdr_image,
-                   save_png, save_npy, load_sdr_image)
+                   save_png, save_tensor, load_image)
 from hdr_to_gainmap import generate_gainmap, compare_hdr_to_uhdr
 
 
@@ -42,8 +42,8 @@ def hdr_to_gainmap(
 
     outdir = Path(outdir)
     outdir.mkdir(parents=True, exist_ok=True)
-    save_npy(outdir / "gainmap.npy", data["gainmap"][:, :, :1])
-    save_npy(outdir / "img_hdr_linear.npy", data["img_hdr_linear"])
+    save_tensor(outdir / "gainmap.pt", data["gainmap"][:, :, :1])
+    save_tensor(outdir / "img_hdr_linear.pt", data["img_hdr_linear"])
     save_png(outdir / "img_sdr.png", data["img_sdr"])
     data["hdr_metadata"].save(outdir / "hdr_metadata.json")
     data["sdr_metadata"].save(outdir / "sdr_metadata.json")
@@ -60,9 +60,9 @@ def compare_reconstruction(
         logger.remove()
         logger.add(sys.stderr, level="INFO")
     img_hdr, hdr_meta = load_hdr_image(hdr_path)
-    img_sdr = load_sdr_image(sdr_path)
+    img_sdr = load_image(sdr_path)
     sdr_meta = ImageMetadata.from_json(sdr_metadata)
-    gainmap = np.load(gainmap_path)
+    gainmap = torch.load(gainmap_path, weights_only=True)
     compare_hdr_to_uhdr(img_hdr, img_sdr, gainmap, hdr_meta, sdr_meta)
 
 

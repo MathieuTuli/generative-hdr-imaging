@@ -5,7 +5,7 @@ from typing import Any
 import subprocess
 import json
 
-import numpy as np
+import torch
 import cv2
 
 from utils import Gamut, OETF
@@ -55,9 +55,22 @@ class ImageMetadata:
         return cls(**data)
 
 
-def load_hdr_image(fname: Path):
+def load_image(fname: Path):
     image = cv2.imread(str(fname), cv2.IMREAD_UNCHANGED)
     image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+    dtype_mapping = {
+        'uint8': torch.uint8,
+        'uint16': torch.uint16,
+        'float32': torch.float32,
+        'float64': torch.float64
+    }
+    dtype = dtype_mapping.get(str(image.dtype), torch.float32)
+    image = torch.tensor(image, dtype=dtype)
+    return image
+
+
+def load_hdr_image(fname: Path):
+    image = load_image(fname)
     if image is None:
         raise ValueError(f"Failed to load image from path: {fname}")
     try:
@@ -97,19 +110,14 @@ def load_hdr_image(fname: Path):
     return image, metadata
 
 
-def load_sdr_image(fname: Path):
-    image = cv2.imread(str(fname), cv2.IMREAD_UNCHANGED)
-    image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-    return image
-
-
-def save_npy(fname: Path, data):
-    np.save(fname, data)
+def save_tensor(fname: Path, data):
+    torch.save(data, fname)
 
 
 def save_png(fname: Path, data):
-    if data.dtype not in {np.uint8, np.uint16}:
+    if data.dtype not in {torch.uint8, torch.uint16}:
         data = cv2.cvtColor(
-            np.clip(data * 255. + 0.5, 0, 255).astype(np.uint8),
+            torch.clip(data * 255. + 0.5, 0,
+                       255).to(torch.uint8).cpu().numpy(),
             cv2.COLOR_BGR2RGB)
     cv2.imwrite(str(fname), data)

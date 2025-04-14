@@ -1,6 +1,7 @@
 from loguru import logger
 
 import numpy as np
+import torch
 
 from ioops import ImageMetadata
 from metrics import psnr
@@ -10,9 +11,10 @@ import utils
 def compute_gain(hdr_y_nits: float, sdr_y_nits: float,
                  hdr_offset: float = 0.015625,
                  sdr_offset: float = 0.015625):
-    gain = np.log2((hdr_y_nits + hdr_offset) / (sdr_y_nits + sdr_offset))
+    gain = torch.log2((hdr_y_nits + hdr_offset) / (sdr_y_nits + sdr_offset))
     mask_low = sdr_y_nits < 2. / 255.0
-    gain[mask_low] = np.minimum(gain[mask_low], 2.3)
+    gain[mask_low] = torch.minimum(gain[mask_low],
+                                   torch.tensor(2.3, dtype=torch.float32))
     return gain
 
 
@@ -21,50 +23,51 @@ def affine_map_gain(gainlog2: float,
                     max_gainlog2: float,
                     map_gamma: float):
     mapped_val = (gainlog2 - min_gainlog2) / (max_gainlog2 - min_gainlog2)
-    mapped_val = np.clip(mapped_val, 0., 1.)
+    mapped_val = torch.clip(mapped_val, 0., 1.)
     if (map_gamma != 1.0):
-        mapped_val = np.power(mapped_val, map_gamma)
+        mapped_val = torch.pow(mapped_val,
+                               torch.tensor(map_gamma, dtype=torch.float32))
     return mapped_val
 
 
-def recompute_hdr_luminance(sdr_luminance: np.ndarray,
-                            gain: np.ndarray,
+def recompute_hdr_luminance(sdr_luminance: torch.Tensor,
+                            gain: torch.Tensor,
                             hdr_offset: float = 0.015625,
-                            sdr_offset: float = 0.015625) -> np.ndarray:
-    gain_factor = np.exp2(gain)
-    return np.multiply(sdr_luminance + sdr_offset, gain_factor) - hdr_offset
+                            sdr_offset: float = 0.015625) -> torch.Tensor:
+    gain_factor = torch.exp2(gain)
+    return torch.multiply(sdr_luminance + sdr_offset, gain_factor) - hdr_offset
 
 
-def undo_affine_map_gain(gain: np.ndarray,
+def undo_affine_map_gain(gain: torch.Tensor,
                          map_gamma: float,
                          min_content_boost: float,
-                         max_content_boost: float) -> np.ndarray:
-    effective_gain = np.power(
+                         max_content_boost: float) -> torch.Tensor:
+    effective_gain = torch.power(
         gain, 1.0 / map_gamma) if map_gamma != 1.0 else gain
     log_min = np.log2(min_content_boost)
     log_max = np.log2(max_content_boost)
-    return np.multiply(log_min, 1.0 - effective_gain
-                       ) + np.multiply(log_max, effective_gain)
+    return torch.multiply(log_min, 1.0 - effective_gain
+                          ) + torch.multiply(log_max, effective_gain)
 
 
-def apply_gain(e: np.ndarray,
-               gain: np.ndarray,
+def apply_gain(e: torch.Tensor,
+               gain: torch.Tensor,
                map_gamma: float,
                min_content_boost: float,
                max_content_boost: float,
                hdr_offset: float = 0.015625,
-               sdr_offset: float = 0.015625) -> np.ndarray:
-    effective_gain = np.power(
+               sdr_offset: float = 0.015625) -> torch.Tensor:
+    effective_gain = torch.power(
         gain, 1.0 / map_gamma) if map_gamma != 1.0 else gain
     log_min = np.log2(min_content_boost)
     log_max = np.log2(max_content_boost)
-    log_boost = np.multiply(log_min, 1.0 - effective_gain) + \
-        np.multiply(log_max, effective_gain)
-    gain_factor = np.exp2(log_boost)
-    return np.multiply(e + sdr_offset, gain_factor) - hdr_offset
+    log_boost = torch.multiply(log_min, 1.0 - effective_gain) + \
+        torch.multiply(log_max, effective_gain)
+    gain_factor = torch.exp2(log_boost)
+    return torch.multiply(e + sdr_offset, gain_factor) - hdr_offset
 
 
-def generate_gainmap(img_hdr: np.ndarray,
+def generate_gainmap(img_hdr: torch.Tensor,
                      meta: ImageMetadata,
                      ):
     hdr_inv_oetf = utils.GetInvOETFFn(meta.oetf)
@@ -82,9 +85,10 @@ def generate_gainmap(img_hdr: np.ndarray,
 
     height, width, channels = img_hdr.shape
     logger.debug(
-        f"Image min/max/mean {img_hdr.min()}/{img_hdr.max()}/{img_hdr.mean()}")
+        f"Image min/max/mean {img_hdr.to(torch.float32).min()}/" +
+        f"{img_hdr.to(torch.float32).max()}/{img_hdr.to(torch.float32).mean()}")
 
-    img_hdr_norm = img_hdr.astype(np.float32) / \
+    img_hdr_norm = img_hdr.to(torch.float32) / \
         float((1 << meta.bit_depth) - 1)
 
     img_hdr_linear = hdr_inv_oetf(img_hdr_norm)
@@ -92,31 +96,31 @@ def generate_gainmap(img_hdr: np.ndarray,
     img_hdr_linear = hdr_gamut_conv(img_hdr_linear)
     img_hdr_linear[img_hdr_linear < 0.] = 0.
 
-    all_values = img_hdr_linear.reshape(-1)
-    clip_value = np.percentile(all_values, meta.clip_percentile * 100)
+    clip_value = torch.quantile(img_hdr_linear.reshape(-1),
+                                meta.clip_percentile)
     logger.debug(
         f"HDR {meta.clip_percentile}th-percentile clip value: {clip_value}")
 
     min_gain, max_gain = 255.0, -255.0
     img_sdr = sdr_gamut_conv(img_hdr_linear)
     img_sdr[img_sdr < 0.] = 0.
-    img_sdr = np.minimum(img_sdr, clip_value) / clip_value
+    img_sdr = torch.minimum(img_sdr, clip_value) / clip_value
     img_sdr = sdr_oetf(img_sdr)
 
-    img_sdr_lin = np.clip(img_sdr * 255.0 + 0.5, 0, 255).astype(np.uint8)
-    img_sdr_lin = img_sdr_lin.astype(np.float32) / 255.0
+    img_sdr_lin = torch.clip(img_sdr * 255.0 + 0.5, 0, 255).to(torch.uint8)
+    img_sdr_lin = img_sdr_lin.to(torch.float32) / 255.0
 
     img_sdr_lin = sdr_inv_oetf(img_sdr_lin)
     img_sdr_lin = sdr_hdr_gamut_conv(img_sdr_lin)
 
     sdr_y_nits = bt2100_luminance_fn(img_sdr_lin) * utils.SDR_WHITE_NITS
     hdr_y_nits = bt2100_luminance_fn(img_hdr_linear) * hdr_peak_nits
-    gainmap = compute_gain(hdr_y_nits, sdr_y_nits).astype(np.float32)
+    gainmap = compute_gain(hdr_y_nits, sdr_y_nits).to(torch.float32)
     min_gain = min(gainmap.min(), min_gain)
     max_gain = max(gainmap.max(), max_gain)
 
-    min_gain = np.clip(min_gain, -14.3, 15.6)
-    max_gain = np.clip(max_gain, -14.3, 15.6)
+    min_gain = torch.clip(min_gain, -14.3, 15.6)
+    max_gain = torch.clip(max_gain, -14.3, 15.6)
 
     if meta.min_content_boost is not None:
         min_gain = np.log2(meta.min_content_boost)
@@ -149,8 +153,8 @@ def generate_gainmap(img_hdr: np.ndarray,
     }
 
 
-def gainmap_sdr_to_hdr(img_sdr: np.ndarray,
-                       gainmap: np.ndarray,
+def gainmap_sdr_to_hdr(img_sdr: torch.Tensor,
+                       gainmap: torch.Tensor,
                        meta: ImageMetadata):
 
     sdr_gamut_conv = utils.GetGamutConversionFn(
@@ -180,16 +184,16 @@ def gainmap_sdr_to_hdr(img_sdr: np.ndarray,
         meta.sdr_offset
     )
     img_hdr_lin = img_hdr_lin * utils.SDR_WHITE_NITS / hdr_peak_nits
-    img_hdr_lin = np.clip(img_hdr_lin, 0., 1.)
+    img_hdr_lin = torch.clip(img_hdr_lin, 0., 1.)
     img_hdr = hdr_inv_ootf(img_hdr_lin, bt2100_luminance_fn)
     img_hdr = hdr_oetf(img_hdr)
 
     return {"img_hdr": img_hdr}
 
 
-def compare_hdr_to_uhdr(img_hdr: np.ndarray,
-                        img_sdr: np.ndarray,
-                        gainmap: np.ndarray,
+def compare_hdr_to_uhdr(img_hdr: torch.Tensor,
+                        img_sdr: torch.Tensor,
+                        gainmap: torch.Tensor,
                         hdr_meta: ImageMetadata,
                         sdr_meta: ImageMetadata):
     hdr_inv_oetf = utils.GetInvOETFFn(hdr_meta.oetf)
@@ -204,15 +208,15 @@ def compare_hdr_to_uhdr(img_hdr: np.ndarray,
     sdr_hdr_gamut_conv = utils.GetGamutConversionFn(
         src_gamut=sdr_meta.gamut, dst_gamut=utils.Gamut.BT2100)
 
-    img_hdr_norm = img_hdr.astype(np.float32) / \
+    img_hdr_norm = img_hdr.to(torch.float32) / \
         float((1 << hdr_meta.bit_depth) - 1)
-    img_sdr_norm = img_sdr.astype(np.float32) / \
+    img_sdr_norm = img_sdr.to(torch.float32) / \
         float((1 << sdr_meta.bit_depth) - 1)
 
     img_hdr_lin = hdr_inv_oetf(img_hdr_norm)
     img_hdr_lin = hdr_ootf(img_hdr_lin, hdr_luminance_fn)
     img_hdr_lin = hdr_gamut_conv(img_hdr_lin)
-    img_hdr_lin = np.clip(img_hdr_lin, 0., 1.)
+    img_hdr_lin = torch.clip(img_hdr_lin, 0., 1.)
     img_hdr_lum = bt2100_luminance_fn(img_hdr_lin)
 
     img_sdr_lin = sdr_inv_oetf(img_sdr_norm)
@@ -222,7 +226,7 @@ def compare_hdr_to_uhdr(img_hdr: np.ndarray,
         sdr_meta.min_content_boost, sdr_meta.max_content_boost,
         sdr_meta.hdr_offset, sdr_meta.sdr_offset)
     img_hdr_recon *= utils.SDR_WHITE_NITS / hdr_peak_nits
-    img_hdr_recon = np.clip(img_hdr_recon, 0., 1.)
+    img_hdr_recon = torch.clip(img_hdr_recon, 0., 1.)
 
     img_sdr_lum = bt2100_luminance_fn(img_sdr_lin) * utils.SDR_WHITE_NITS
     gain_log2 = undo_affine_map_gain(gainmap, sdr_meta.map_gamma,
