@@ -8,17 +8,18 @@ from metrics import psnr
 import utils
 
 
-def compute_gain(hdr_y_nits: float, sdr_y_nits: float,
+def compute_gain(hdr_y_nits: torch.Tensor, sdr_y_nits: torch.Tensor,
                  hdr_offset: float = 0.015625,
                  sdr_offset: float = 0.015625):
     gain = torch.log2((hdr_y_nits + hdr_offset) / (sdr_y_nits + sdr_offset))
     mask_low = sdr_y_nits < 2. / 255.0
     gain[mask_low] = torch.minimum(gain[mask_low],
-                                   torch.tensor(2.3, dtype=torch.float32))
+                                   torch.tensor(2.3, dtype=torch.float32,
+                                                device=hdr_y_nits.device))
     return gain
 
 
-def affine_map_gain(gainlog2: float,
+def affine_map_gain(gainlog2: torch.Tensor,
                     min_gainlog2: float,
                     max_gainlog2: float,
                     map_gamma: float):
@@ -26,7 +27,8 @@ def affine_map_gain(gainlog2: float,
     mapped_val = torch.clip(mapped_val, 0., 1.)
     if (map_gamma != 1.0):
         mapped_val = torch.pow(mapped_val,
-                               torch.tensor(map_gamma, dtype=torch.float32))
+                               torch.tensor(map_gamma, dtype=torch.float32,
+                                            device=gainlog2.device))
     return mapped_val
 
 
@@ -101,7 +103,6 @@ def generate_gainmap(img_hdr: torch.Tensor,
     logger.debug(
         f"HDR {meta.clip_percentile}th-percentile clip value: {clip_value}")
 
-    min_gain, max_gain = 255.0, -255.0
     img_sdr = sdr_gamut_conv(img_hdr_linear)
     img_sdr[img_sdr < 0.] = 0.
     img_sdr = torch.minimum(img_sdr, clip_value) / clip_value
@@ -116,11 +117,11 @@ def generate_gainmap(img_hdr: torch.Tensor,
     sdr_y_nits = bt2100_luminance_fn(img_sdr_lin) * utils.SDR_WHITE_NITS
     hdr_y_nits = bt2100_luminance_fn(img_hdr_linear) * hdr_peak_nits
     gainmap = compute_gain(hdr_y_nits, sdr_y_nits).to(torch.float32)
-    min_gain = min(gainmap.min(), min_gain)
-    max_gain = max(gainmap.max(), max_gain)
+    min_gain = gainmap.min().item()
+    max_gain = gainmap.max().item()
 
-    min_gain = torch.clip(min_gain, -14.3, 15.6)
-    max_gain = torch.clip(max_gain, -14.3, 15.6)
+    min_gain = np.clip(min_gain, -14.3, 15.6)
+    max_gain = np.clip(max_gain, -14.3, 15.6)
 
     if meta.min_content_boost is not None:
         min_gain = np.log2(meta.min_content_boost)

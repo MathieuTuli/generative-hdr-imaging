@@ -1,5 +1,6 @@
 from pathlib import Path
 
+import multiprocessing
 import sys
 
 from loguru import logger
@@ -13,27 +14,31 @@ from hdr_to_gainmap import generate_gainmap, compare_hdr_to_uhdr
 
 
 def hdr_to_gainmap(
-        fname: Path,
-        outdir: Path,
+        fname: str,
+        outdir: str,
         clip_percentile: float = 0.95,
         hdr_offset: float = 0.015625,
         sdr_offset: float = 0.015625,
-        min_content_boost: float = 1.0,
-        max_content_boost: float = 4.0,
+        min_content_boost: float = None,
+        max_content_boost: float = None,
         map_gamma: float = 1.0,
         hdr_capacity_min: float = 1.0,
         hdr_capacity_max: float = 4.0,
+        cuda: bool = False,
         debug: bool = False):
     if not debug:
         logger.remove()
         logger.add(sys.stderr, level="INFO")
+    logger.info(f"Running hdr_to_gainmap fpr {fname}")
 
     img_hdr, meta = load_hdr_image(fname)
+    if cuda:
+        img_hdr = img_hdr.to("cuda")
     meta.clip_percentile = clip_percentile
     meta.hdr_offset = hdr_offset
     meta.sdr_offset = sdr_offset
     meta.min_content_boost = min_content_boost
-    meta.max_content_boost = 8
+    meta.max_content_boost = max_content_boost
     meta.map_gamma = map_gamma
     meta.hdr_capacity_min = hdr_capacity_min
     meta.hdr_capacity_max = hdr_capacity_max
@@ -42,11 +47,40 @@ def hdr_to_gainmap(
 
     outdir = Path(outdir)
     outdir.mkdir(parents=True, exist_ok=True)
-    save_tensor(outdir / "gainmap.pt", data["gainmap"][:, :, :1])
-    save_tensor(outdir / "img_hdr_linear.pt", data["img_hdr_linear"])
-    save_png(outdir / "img_sdr.png", data["img_sdr"])
-    data["hdr_metadata"].save(outdir / "hdr_metadata.json")
-    data["sdr_metadata"].save(outdir / "sdr_metadata.json")
+    save_tensor(outdir / f"{fname.stem}__gainmap.pt",
+                data["gainmap"][:, :, :1])
+    save_tensor(outdir / f"{fname.stem}__hdr_linear.pt",
+                data["img_hdr_linear"])
+    save_png(outdir / f"{fname.stem}__sdr.png", data["img_sdr"])
+    data["hdr_metadata"].save(outdir / f"{fname.stem}__hdr_metadata.json")
+    data["sdr_metadata"].save(outdir / f"{fname.stem}__sdr_metadata.json")
+
+
+def hdr_to_gainmap_batched(
+        indir: str,
+        outdir: str,
+        proc: int,
+        clip_percentile: float = 0.95,
+        hdr_offset: float = 0.015625,
+        sdr_offset: float = 0.015625,
+        min_content_boost: float = None,
+        max_content_boost: float = None,
+        map_gamma: float = 1.0,
+        hdr_capacity_min: float = 1.0,
+        hdr_capacity_max: float = 4.0,
+        cuda: bool = False,
+        debug: bool = False):
+    if not debug:
+        logger.remove()
+        logger.add(sys.stderr, level="INFO")
+
+    fnames = list(Path(indir).iterdir())
+    args = [(fname, outdir, clip_percentile, hdr_offset, sdr_offset,
+             min_content_boost, max_content_boost, map_gamma,
+             hdr_capacity_min, hdr_capacity_max, cuda, debug)
+            for fname in fnames]
+    with multiprocessing.Pool(processes=proc) as pool:
+        pool.starmap(hdr_to_gainmap, args)
 
 
 def compare_reconstruction(
@@ -69,6 +103,7 @@ def compare_reconstruction(
 if __name__ == '__main__':
     fcns = {
         "hdr_to_gainmap": hdr_to_gainmap,
+        "hdr_to_gainmap_batched": hdr_to_gainmap_batched,
         "compare_reconstruction": compare_reconstruction,
     }
     fire.Fire(fcns)

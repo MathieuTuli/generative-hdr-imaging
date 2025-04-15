@@ -132,7 +132,8 @@ SRGB_B = 0.072192
 
 def sRGBLuminance(e: torch.Tensor) -> float:
     return torch.matmul(e, torch.tensor([SRGB_R, SRGB_G, SRGB_B],
-                                        dtype=torch.float32))[..., None]
+                                        dtype=torch.float32,
+                                        device=e.device))[..., None]
 
 
 SRGB_CB = 2.0 * (1.0 - SRGB_B)
@@ -208,7 +209,8 @@ P3_B = 0.0792869
 
 def P3Luminance(e: torch.Tensor) -> float:
     return torch.matmul(e, torch.tensor([P3_R, P3_G, P3_B],
-                                        dtype=torch.float32))[..., None]
+                                        dtype=torch.float32,
+                                        device=e.device))[..., None]
 
 
 P3_YR = 0.299
@@ -253,7 +255,9 @@ BT2100_B = 0.059302
 
 
 def Bt2100Luminance(e: torch.Tensor) -> float:
-    return torch.matmul(e, torch.Tensor([BT2100_R, BT2100_G, BT2100_B]))[..., None]
+    return torch.matmul(e, torch.tensor([BT2100_R, BT2100_G, BT2100_B],
+                                        dtype=torch.float32,
+                                        device=e.device))[..., None]
 
 
 BT2100_CB = 2.0 * (1.0 - BT2100_B)
@@ -334,7 +338,8 @@ def HLG_OOTF(e: torch.Tensor, luminance: LuminanceFn) -> torch.Tensor:
 
 def HLG_OOTFApprox(e: torch.Tensor,
                    luminance: LuminanceFn | None = None) -> torch.Tensor:
-    return torch.pow(e, torch.tensor(OOTF_GAMMA, dtype=torch.float32))
+    return torch.pow(e, torch.tensor(OOTF_GAMMA, dtype=torch.float32,
+                                     device=e.device))
 
 
 def HLG_InvOOTF(e: torch.Tensor, luminance: LuminanceFn) -> torch.Tensor:
@@ -343,7 +348,8 @@ def HLG_InvOOTF(e: torch.Tensor, luminance: LuminanceFn) -> torch.Tensor:
 
 
 def HLG_InvOOTFApprox(e: torch.Tensor) -> torch.Tensor:
-    return torch.pow(e, torch.tensor((1.0 / OOTF_GAMMA), dtype=torch.float32))
+    return torch.pow(e, torch.tensor((1.0 / OOTF_GAMMA), dtype=torch.float32,
+                                     device=e.device))
 
 # ==============================================================================
 # PQ Transformations
@@ -376,12 +382,15 @@ def PQ_OETFLUT(e: float) -> float:
 
 
 def PQ_InvOETF(e_gamma: torch.Tensor) -> torch.Tensor:
-    val = torch.pow(e_gamma, torch.tensor(1.0 / PQ_M2, dtype=torch.float32))
+    val = torch.pow(e_gamma, torch.tensor(1.0 / PQ_M2, dtype=torch.float32,
+                                          device=e_gamma.device))
     numerator = torch.maximum(val - PQ_C1,
-                              torch.tensor(0.0, dtype=torch.float32))
+                              torch.tensor(0.0, dtype=torch.float32,
+                                           device=e_gamma.device))
     denominator = PQ_C2 - PQ_C3 * val
     return torch.pow(numerator / denominator,
-                     torch.tensor(1.0 / PQ_M1, dtype=torch.float32))
+                     torch.tensor(1.0 / PQ_M1, dtype=torch.float32,
+                                  device=e_gamma.device))
 
 
 # DEPRECATE:
@@ -397,7 +406,7 @@ def PQ_InvOETFLUT(e_gamma: float) -> float:
 
 
 def ConvertGamut(e: torch.Tensor, coeffs: torch.Tensor) -> torch.Tensor:
-    return torch.matmul(coeffs[None, None, ...],
+    return torch.matmul(coeffs[None, None, ...].to(e.device),
                         e[..., None]).squeeze(-1)
 
 
@@ -429,7 +438,8 @@ BT2100_TO_BT709 = torch.tensor([[1.660491,  -0.587641, -0.07285],
 
 BT2100_TO_P3 = torch.tensor([[1.343578,  -0.282179, -0.061399],
                              [-0.065298,  1.075788,  -0.01049],
-                             [0.002822, -0.019598,  1.016777]])
+                             [0.002822, -0.019598,  1.016777]],
+                            dtype=torch.float32)
 
 
 def Bt709ToP3(e: torch.Tensor) -> torch.Tensor:
@@ -719,4 +729,5 @@ def ApplyToneMapping(rgb: torch.Tensor, mode: ToneMapping,
         ApplyToneMapping_scalar(rgb[0], mode, target_nits, max_nits),
         ApplyToneMapping_scalar(rgb[1], mode, target_nits, max_nits),
         ApplyToneMapping_scalar(rgb[2], mode, target_nits, max_nits),
-        dtype=torch.float32)
+        dtype=torch.float32,
+        device=rgb.device)
