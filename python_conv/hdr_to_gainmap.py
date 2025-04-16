@@ -54,7 +54,8 @@ def recompute_hdr_luminance(sdr_luminance: torch.Tensor,
 def undo_affine_map_gain(gain: torch.Tensor,
                          map_gamma: tuple[float, float, float],
                          min_content_boost: tuple[float, float, float],
-                         max_content_boost: tuple[float, float, float]) -> torch.Tensor:
+                         max_content_boost: tuple[float, float, float]
+                         ) -> torch.Tensor:
     map_gamma = torch.tensor(map_gamma, dtype=DTYPE, device=gain.device)
     effective_gain = torch.pow(gain, 1.0 / map_gamma)
     log_min = torch.tensor(np.log2(min_content_boost),
@@ -86,7 +87,8 @@ def apply_gain(e: torch.Tensor,
 
 def generate_gainmap(img_hdr: torch.Tensor,
                      meta: ImageMetadata,
-                     c3: bool = False) -> dict[str, torch.Tensor | ImageMetadata]:
+                     c3: bool = False
+                     ) -> dict[str, torch.Tensor | ImageMetadata]:
     hdr_inv_oetf = utils.GetInvOETFFn(meta.oetf)
     hdr_ootf = utils.GetOOTFFn(meta.oetf)
     hdr_gamut_conv = utils.GetGamutConversionFn(utils.Gamut.BT2100, meta.gamut)
@@ -97,16 +99,15 @@ def generate_gainmap(img_hdr: torch.Tensor,
                                                 dst_gamut=utils.Gamut.BT709)
     sdr_inv_oetf = utils.GetInvOETFFn(utils.OETF.SRGB)
     sdr_oetf = utils.GetOETFFn(utils.OETF.SRGB)
-    sdr_hdr_gamut_conv = utils.GetGamutConversionFn(src_gamut=utils.Gamut.BT709,
-                                                    dst_gamut=utils.Gamut.BT2100)
+    sdr_hdr_gamut_conv = utils.GetGamutConversionFn(
+        src_gamut=utils.Gamut.BT709, dst_gamut=utils.Gamut.BT2100)
 
     height, width, channels = img_hdr.shape
     logger.debug(
         f"Image min/max/mean {img_hdr.to(DTYPE).min()}/" +
         f"{img_hdr.to(DTYPE).max()}/{img_hdr.to(DTYPE).mean()}")
 
-    img_hdr_norm = img_hdr.to(DTYPE) / \
-        float((1 << meta.bit_depth) - 1)
+    img_hdr_norm = img_hdr.to(DTYPE) / float((1 << meta.bit_depth) - 1)
 
     img_hdr_lin = hdr_inv_oetf(img_hdr_norm)
     img_hdr_lin = hdr_ootf(img_hdr_lin, hdr_luminance_fn)
@@ -170,8 +171,6 @@ def generate_gainmap(img_hdr: torch.Tensor,
         f"min/max gain (exp2): {np.exp2(min_gain)}/{np.exp2(max_gain)}")
 
     gainmap = affine_map_gain(gainmap, min_gain, max_gain, meta.map_gamma)
-    # bd = 1 << 16 - 1
-    # gainmap = torch.clip(gainmap * bd + 0.5, 0, bd) / bd
 
     sdr_meta = ImageMetadata.from_dict(meta.to_dict())
     sdr_meta.gamut = utils.Gamut.BT709
@@ -228,10 +227,8 @@ def compare_hdr_to_uhdr(img_hdr: torch.Tensor,
     sdr_hdr_gamut_conv = utils.GetGamutConversionFn(
         src_gamut=sdr_meta.gamut, dst_gamut=utils.Gamut.BT2100)
 
-    img_hdr_norm = img_hdr.to(DTYPE) / \
-        float((1 << hdr_meta.bit_depth) - 1)
-    img_sdr_norm = img_sdr.to(DTYPE) / \
-        float((1 << sdr_meta.bit_depth) - 1)
+    img_hdr_norm = img_hdr.to(DTYPE) / float((1 << hdr_meta.bit_depth) - 1)
+    img_sdr_norm = img_sdr.to(DTYPE) / float((1 << sdr_meta.bit_depth) - 1)
 
     img_hdr_lin = hdr_inv_oetf(img_hdr_norm)
     img_hdr_lin = hdr_ootf(img_hdr_lin, hdr_luminance_fn)
