@@ -13,99 +13,88 @@ from ioops import (ImageMetadata, load_hdr_image,
 from hdr_to_gainmap import generate_gainmap, compare_hdr_to_uhdr
 
 
-def hdr_to_gainmap(
-        fname: str,
-        outdir: str,
-        clip_percentile: float = 0.95,
-        hdr_offset: tuple[float, float, float] = (0.015625, 0.015625, 0.015625),  # noqa
-        sdr_offset: tuple[float, float, float] = (0.015625,  0.015625,  0.015625),  # noqa
-        min_content_boost: None | tuple[float, float, float] = None,
-        max_content_boost: None | tuple[float, float, float] = None,
-        map_gamma: tuple[float, float, float] = (1.0, 1.0, 1.0),
-        hdr_capacity_min: float = 1.0,
-        hdr_capacity_max: float = 4.0,
-        c3: bool = False,
-        cuda: bool = False,
-        debug: bool = False):
-    if not debug:
-        logger.remove()
-        logger.add(sys.stderr, level="INFO")
-    logger.info(f"Running hdr_to_gainmap fpr {fname}")
-    if isinstance(fname, str):
-        fname = Path(fname)
+class App:
+    def __init__(self, debug: bool = False):
+        if not debug:
+            logger.remove()
+            logger.add(sys.stderr, level="INFO")
 
-    img_hdr, meta = load_hdr_image(fname)
-    if cuda:
-        img_hdr = img_hdr.to("cuda")
-    meta.clip_percentile = clip_percentile
-    meta.hdr_offset = hdr_offset
-    meta.sdr_offset = sdr_offset
-    meta.min_content_boost = min_content_boost
-    meta.max_content_boost = max_content_boost
-    meta.map_gamma = map_gamma
-    meta.hdr_capacity_min = hdr_capacity_min
-    meta.hdr_capacity_max = hdr_capacity_max
+    def hdr_to_gainmap(
+            self,
+            fname: str,
+            outdir: str,
+            clip_percentile: float = 0.95,
+            hdr_offset: tuple[float, float, float] = (0.015625, 0.015625, 0.015625),  # noqa
+            sdr_offset: tuple[float, float, float] = (0.015625,  0.015625,  0.015625),  # noqa
+            min_content_boost: None | tuple[float, float, float] = None,
+            max_content_boost: None | tuple[float, float, float] = None,
+            map_gamma: tuple[float, float, float] = (1.0, 1.0, 1.0),
+            hdr_capacity_min: float = 1.0,
+            hdr_capacity_max: float = 4.0,
+            c3: bool = False,
+            cuda: bool = False,):
+        logger.info(f"Running hdr_to_gainmap fpr {fname}")
+        if isinstance(fname, str):
+            fname = Path(fname)
 
-    data = generate_gainmap(img_hdr, meta, c3)
+        img_hdr, meta = load_hdr_image(fname)
+        if cuda:
+            img_hdr = img_hdr.to("cuda")
+        meta.clip_percentile = clip_percentile
+        meta.hdr_offset = hdr_offset
+        meta.sdr_offset = sdr_offset
+        meta.min_content_boost = min_content_boost
+        meta.max_content_boost = max_content_boost
+        meta.map_gamma = map_gamma
+        meta.hdr_capacity_min = hdr_capacity_min
+        meta.hdr_capacity_max = hdr_capacity_max
 
-    outdir = Path(outdir)
-    outdir.mkdir(parents=True, exist_ok=True)
-    save_tensor(outdir / f"{fname.stem}__gainmap.pt", data["gainmap"])
-    save_tensor(outdir / f"{fname.stem}__hdr_linear.pt", data["img_hdr_linear"])  # noqa
-    save_png(outdir / f"{fname.stem}__sdr.png", data["img_sdr"])
-    data["hdr_metadata"].save(outdir / f"{fname.stem}__hdr_metadata.json")
-    data["sdr_metadata"].save(outdir / f"{fname.stem}__sdr_metadata.json")
+        data = generate_gainmap(img_hdr, meta, c3)
 
+        outdir = Path(outdir)
+        outdir.mkdir(parents=True, exist_ok=True)
+        save_tensor(outdir / f"{fname.stem}__gainmap.pt", data["gainmap"])
+        save_tensor(outdir / f"{fname.stem}__hdr_linear.pt", data["img_hdr_linear"])  # noqa
+        save_png(outdir / f"{fname.stem}__sdr.png", data["img_sdr"])
+        data["hdr_metadata"].save(outdir / f"{fname.stem}__hdr_metadata.json")
+        data["sdr_metadata"].save(outdir / f"{fname.stem}__sdr_metadata.json")
 
-def hdr_to_gainmap_batched(
-        indir: str,
-        outdir: str,
-        proc: int,
-        clip_percentile: float = 0.95,
-        hdr_offset: tuple[float, float, float] = (0.015625, 0.015625, 0.015625),  # noqa
-        sdr_offset: tuple[float, float, float] = (0.015625,  0.015625,  0.015625),  # noqa
-        min_content_boost: None | tuple[float, float, float] = None,
-        max_content_boost: None | tuple[float, float, float] = None,
-        map_gamma: tuple[float, float, float] = (1.0, 1.0, 1.0),
-        hdr_capacity_min: float = 1.0,
-        hdr_capacity_max: float = 4.0,
-        c3: bool = False,
-        cuda: bool = False,
-        debug: bool = False):
-    if not debug:
-        logger.remove()
-        logger.add(sys.stderr, level="INFO")
+    def hdr_to_gainmap_batched(
+            self,
+            indir: str,
+            outdir: str,
+            proc: int,
+            clip_percentile: float = 0.95,
+            hdr_offset: tuple[float, float, float] = (0.015625, 0.015625, 0.015625),  # noqa
+            sdr_offset: tuple[float, float, float] = (0.015625,  0.015625,  0.015625),  # noqa
+            min_content_boost: None | tuple[float, float, float] = None,
+            max_content_boost: None | tuple[float, float, float] = None,
+            map_gamma: tuple[float, float, float] = (1.0, 1.0, 1.0),
+            hdr_capacity_min: float = 1.0,
+            hdr_capacity_max: float = 4.0,
+            c3: bool = False,
+            cuda: bool = False,):
+        fnames = list(Path(indir).iterdir())
+        args = [(fname, outdir, clip_percentile, hdr_offset, sdr_offset,
+                 min_content_boost, max_content_boost, map_gamma,
+                 hdr_capacity_min, hdr_capacity_max, c3, cuda)
+                for fname in fnames]
+        with multiprocessing.Pool(processes=proc) as pool:
+            pool.starmap(self.hdr_to_gainmap, args)
 
-    fnames = list(Path(indir).iterdir())
-    args = [(fname, outdir, clip_percentile, hdr_offset, sdr_offset,
-             min_content_boost, max_content_boost, map_gamma,
-             hdr_capacity_min, hdr_capacity_max, c3, cuda, debug)
-            for fname in fnames]
-    with multiprocessing.Pool(processes=proc) as pool:
-        pool.starmap(hdr_to_gainmap, args)
-
-
-def compare_reconstruction(
-        hdr_path: Path,
-        sdr_path: Path,
-        gainmap_path: Path,
-        sdr_metadata: Path,
-        debug: bool = False
-):
-    if not debug:
-        logger.remove()
-        logger.add(sys.stderr, level="INFO")
-    img_hdr, hdr_meta = load_hdr_image(hdr_path)
-    img_sdr = load_image(sdr_path)
-    sdr_meta = ImageMetadata.from_json(sdr_metadata)
-    gainmap = torch.load(gainmap_path, weights_only=True)
-    compare_hdr_to_uhdr(img_hdr, img_sdr, gainmap, hdr_meta, sdr_meta)
+    def compare_reconstruction(
+            self,
+            hdr_path: Path,
+            sdr_path: Path,
+            gainmap_path: Path,
+            sdr_metadata: Path,
+    ):
+        img_hdr, hdr_meta = load_hdr_image(hdr_path)
+        img_sdr = load_image(sdr_path)
+        sdr_meta = ImageMetadata.from_json(sdr_metadata)
+        gainmap = torch.load(gainmap_path, weights_only=True)
+        compare_hdr_to_uhdr(img_hdr, img_sdr, gainmap, hdr_meta, sdr_meta)
 
 
 if __name__ == '__main__':
-    fcns = {
-        "hdr_to_gainmap": hdr_to_gainmap,
-        "hdr_to_gainmap_batched": hdr_to_gainmap_batched,
-        "compare_reconstruction": compare_reconstruction,
-    }
-    fire.Fire(fcns)
+    fire.Fire(App)

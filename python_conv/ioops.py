@@ -8,7 +8,8 @@ import json
 import torch
 import cv2
 
-from utils import Gamut, OETF, DTYPE
+from utils import Gamut, OETF
+import utils
 
 
 @dataclass
@@ -64,7 +65,7 @@ def load_image(fname: Path):
         'float32': torch.float32,
         'float64': torch.float64
     }
-    dtype = dtype_mapping.get(str(image.dtype), DTYPE)
+    dtype = dtype_mapping.get(str(image.dtype), utils.DTYPE)
     image = torch.tensor(image, dtype=dtype)
     return image
 
