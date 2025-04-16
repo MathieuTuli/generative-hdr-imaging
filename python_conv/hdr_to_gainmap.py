@@ -73,17 +73,9 @@ def apply_gain(e: torch.Tensor,
                max_content_boost: tuple[float, float, float],
                hdr_offset: tuple[float, float, float],
                sdr_offset: tuple[float, float, float]) -> torch.Tensor:
-    map_gamma = torch.tensor(map_gamma, dtype=DTYPE, device=e.device)
-    hdr_offset = torch.tensor(hdr_offset, dtype=DTYPE, device=e.device)
-    sdr_offset = torch.tensor(sdr_offset, dtype=DTYPE, device=e.device)
-    effective_gain = torch.pow(gain, 1.0 / map_gamma)
-    log_min = torch.tensor(np.log2(min_content_boost),
-                           dtype=DTYPE, device=e.device)[None, None, ...]
-    log_max = torch.tensor(np.log2(max_content_boost),
-                           dtype=DTYPE, device=e.device)[None, None, ...]
-    log_boost = torch.lerp(log_min, log_max, effective_gain)
-    gain_factor = torch.exp2(log_boost)
-    return torch.multiply(e + sdr_offset, gain_factor) - hdr_offset
+    log_boost = undo_affine_map_gain(gain, map_gamma,
+                                     min_content_boost, max_content_boost)
+    return recompute_hdr_luminance(e, log_boost, hdr_offset, sdr_offset)
 
 
 def generate_gainmap(img_hdr: torch.Tensor,
@@ -216,7 +208,8 @@ def compare_hdr_to_uhdr(img_hdr: torch.Tensor,
                         img_sdr: torch.Tensor,
                         gainmap: torch.Tensor,
                         hdr_meta: ImageMetadata,
-                        sdr_meta: ImageMetadata) -> dict[str, torch.Tensor]:
+                        sdr_meta: ImageMetadata,
+                        c3: bool = False) -> dict[str, torch.Tensor]:
     hdr_inv_oetf = utils.GetInvOETFFn(hdr_meta.oetf)
     hdr_ootf = utils.GetOOTFFn(hdr_meta.oetf)
     hdr_luminance_fn = utils.GetLuminanceFn(hdr_meta.gamut)
@@ -236,18 +229,24 @@ def compare_hdr_to_uhdr(img_hdr: torch.Tensor,
     img_hdr_lin = hdr_ootf(img_hdr_lin, hdr_luminance_fn)
     img_hdr_lin = hdr_gamut_conv(img_hdr_lin)
     img_hdr_lin = torch.clip(img_hdr_lin, 0., 1.)
-    img_hdr_lum = bt2100_luminance_fn(img_hdr_lin)
+    if c3:
+        img_hdr_lum = img_hdr_lin
+    else:
+        img_hdr_lum = bt2100_luminance_fn(img_hdr_lin)
 
     img_sdr_lin = sdr_inv_oetf(img_sdr_norm)
     img_sdr_lin = sdr_hdr_gamut_conv(img_sdr_lin)
     img_hdr_recon = apply_gain(
-        img_sdr_lin, gainmap, sdr_meta.map_gamma,
+        img_sdr_lin * utils.SDR_WHITE_NITS, gainmap, sdr_meta.map_gamma,
         sdr_meta.min_content_boost, sdr_meta.max_content_boost,
         sdr_meta.hdr_offset, sdr_meta.sdr_offset)
-    img_hdr_recon *= utils.SDR_WHITE_NITS / hdr_peak_nits
+    img_hdr_recon /= hdr_peak_nits
     img_hdr_recon = torch.clip(img_hdr_recon, 0., 1.)
 
-    img_sdr_lum = bt2100_luminance_fn(img_sdr_lin) * utils.SDR_WHITE_NITS
+    if c3:
+        img_sdr_lum = img_sdr_lin * utils.SDR_WHITE_NITS
+    else:
+        img_sdr_lum = bt2100_luminance_fn(img_sdr_lin) * utils.SDR_WHITE_NITS
     gain_log2 = undo_affine_map_gain(gainmap, sdr_meta.map_gamma,
                                      sdr_meta.min_content_boost,
                                      sdr_meta.max_content_boost)

@@ -108,12 +108,13 @@ class App:
             sdr_path: Path,
             gainmap_path: Path,
             sdr_metadata: Path,
+            c3: bool = False,
     ):
         img_hdr, hdr_meta = load_hdr_image(hdr_path)
         img_sdr = load_image(sdr_path)
         sdr_meta = ImageMetadata.from_json(sdr_metadata)
         gainmap = torch.load(gainmap_path, weights_only=True)
-        compare_hdr_to_uhdr(img_hdr, img_sdr, gainmap, hdr_meta, sdr_meta)
+        compare_hdr_to_uhdr(img_hdr, img_sdr, gainmap, hdr_meta, sdr_meta, c3)
 
 
 if __name__ == '__main__':
