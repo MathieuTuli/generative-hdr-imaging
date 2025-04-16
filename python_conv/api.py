@@ -45,7 +45,7 @@ class App:
         assert isinstance(map_gamma, tuple), f"Got {map_gamma}"
         assert isinstance(hdr_offset, tuple), f"Got {hdr_offset}"
         assert isinstance(sdr_offset, tuple), f"Got {sdr_offset}"
-        logger.info(f"Running hdr_to_gainmap fpr {fname}")
+        logger.info(f"Running hdr_to_gainmap for {fname}")
         if isinstance(fname, str):
             fname = Path(fname)
 
