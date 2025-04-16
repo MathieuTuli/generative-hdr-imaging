@@ -195,10 +195,10 @@ def gainmap_sdr_to_hdr(img_sdr: torch.Tensor,
     img_sdr_lin = sdr_inv_oetf(img_sdr_norm)
     img_sdr_lin = sdr_hdr_gamut_conv(img_sdr_lin)
     img_hdr_recon = apply_gain(
-        img_sdr_lin, gainmap, meta.map_gamma,
+        img_sdr_lin * utils.SDR_WHITE_NITS, gainmap, meta.map_gamma,
         meta.min_content_boost, meta.max_content_boost,
         meta.hdr_offset, meta.sdr_offset)
-    img_hdr_recon *= utils.SDR_WHITE_NITS / hdr_peak_nits
+    img_hdr_recon /= hdr_peak_nits
     img_hdr_recon = torch.clip(img_hdr_recon, 0., 1.)
 
     return {"img_hdr_lin": img_hdr_recon}
