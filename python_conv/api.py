@@ -24,6 +24,9 @@ class App:
             fname: str,
             outdir: str,
             clip_percentile: float = 0.95,
+            min_max_quantile: float = 0.02,
+            affine_min: float = -1.,
+            affine_max: float = 1.,
             hdr_offset: tuple[float, float, float] = (0.015625, 0.015625, 0.015625),  # noqa
             sdr_offset: tuple[float, float, float] = (0.015625,  0.015625,  0.015625),  # noqa
             min_content_boost: None | tuple[float, float, float] = None,
@@ -50,6 +53,9 @@ class App:
         if cuda:
             img_hdr = img_hdr.to("cuda")
         meta.clip_percentile = clip_percentile
+        meta.min_max_quantile = min_max_quantile
+        meta.affine_min = affine_min
+        meta.affine_max = affine_max
         meta.hdr_offset = hdr_offset
         meta.sdr_offset = sdr_offset
         meta.min_content_boost = min_content_boost
@@ -75,6 +81,9 @@ class App:
             outdir: str,
             proc: int,
             clip_percentile: float = 0.95,
+            min_max_quantile: float = 0.02,
+            affine_min: float = -1.,
+            affine_max: float = 1.,
             hdr_offset: tuple[float, float, float] = (0.015625, 0.015625, 0.015625),  # noqa
             sdr_offset: tuple[float, float, float] = (0.015625,  0.015625,  0.015625),  # noqa
             min_content_boost: None | tuple[float, float, float] = None,
@@ -95,7 +104,8 @@ class App:
         assert isinstance(sdr_offset, tuple), f"Got {sdr_offset}"
 
         fnames = list(Path(indir).iterdir())
-        args = [(fname, outdir, clip_percentile, hdr_offset, sdr_offset,
+        args = [(fname, outdir, clip_percentile, min_max_quantile,
+                 affine_min, affine_max, hdr_offset, sdr_offset,
                  min_content_boost, max_content_boost, map_gamma,
                  hdr_capacity_min, hdr_capacity_max, c3, cuda)
                 for fname in fnames]
