@@ -12,9 +12,13 @@ import utils
 
 
 def compute_gain(hdr_y_nits: torch.Tensor, sdr_y_nits: torch.Tensor,
-                 hdr_offset: float = 0.015625,
-                 sdr_offset: float = 0.015625,
+                 hdr_offset: tuple[float, float, float],
+                 sdr_offset: tuple[float, float, float],
                  max_stops: float = 2.3):
+    hdr_offset = torch.tensor(hdr_offset, dtype=DTYPE,
+                              device=hdr_y_nits.device)
+    sdr_offset = torch.tensor(sdr_offset, dtype=DTYPE,
+                              device=hdr_y_nits.device)
     gain = torch.log2((hdr_y_nits + hdr_offset) / (sdr_y_nits + sdr_offset))
     mask_low = sdr_y_nits < 2. / 255.0
     gain[mask_low] = torch.minimum(gain[mask_low],
@@ -26,30 +30,33 @@ def compute_gain(hdr_y_nits: torch.Tensor, sdr_y_nits: torch.Tensor,
 def affine_map_gain(gainlog2: torch.Tensor,
                     min_gainlog2: float,
                     max_gainlog2: float,
-                    map_gamma: float):
+                    map_gamma: tuple[float, float, float]):
+    map_gamma = torch.tensor(map_gamma, dtype=DTYPE, device=gainlog2.device)
     mapped_val = (gainlog2 - min_gainlog2) / (max_gainlog2 - min_gainlog2)
     mapped_val = torch.clip(mapped_val, 0., 1.)
-    if (map_gamma != 1.0):
-        mapped_val = torch.pow(mapped_val,
-                               torch.tensor(map_gamma, dtype=DTYPE,
-                                            device=gainlog2.device))
+    mapped_val = torch.pow(mapped_val, map_gamma)
     return mapped_val
 
 
 def recompute_hdr_luminance(sdr_luminance: torch.Tensor,
                             gain: torch.Tensor,
-                            hdr_offset: float = 0.015625,
-                            sdr_offset: float = 0.015625) -> torch.Tensor:
+                            hdr_offset: tuple[float, float, float],
+                            sdr_offset: tuple[float, float, float]
+                            ) -> torch.Tensor:
     gain_factor = torch.exp2(gain)
+    hdr_offset = torch.tensor(hdr_offset, dtype=DTYPE,
+                              device=sdr_luminance.device)
+    sdr_offset = torch.tensor(sdr_offset, dtype=DTYPE,
+                              device=sdr_luminance.device)
     return torch.multiply(sdr_luminance + sdr_offset, gain_factor) - hdr_offset
 
 
 def undo_affine_map_gain(gain: torch.Tensor,
-                         map_gamma: float,
-                         min_content_boost: float,
-                         max_content_boost: float) -> torch.Tensor:
-    effective_gain = torch.power(
-        gain, 1.0 / map_gamma) if map_gamma != 1.0 else gain
+                         map_gamma: tuple[float, float, float],
+                         min_content_boost: tuple[float, float, float],
+                         max_content_boost: tuple[float, float, float]) -> torch.Tensor:
+    map_gamma = torch.tensor(map_gamma, dtype=DTYPE, device=gain.device)
+    effective_gain = torch.pow(gain, 1.0 / map_gamma)
     log_min = torch.tensor(np.log2(min_content_boost),
                            dtype=DTYPE, device=gain.device)[None, None, ...]
     log_max = torch.tensor(np.log2(max_content_boost),
@@ -59,13 +66,15 @@ def undo_affine_map_gain(gain: torch.Tensor,
 
 def apply_gain(e: torch.Tensor,
                gain: torch.Tensor,
-               map_gamma: float,
-               min_content_boost: float,
-               max_content_boost: float,
-               hdr_offset: float = 0.015625,
-               sdr_offset: float = 0.015625) -> torch.Tensor:
-    effective_gain = torch.power(
-        gain, 1.0 / map_gamma) if map_gamma != 1.0 else gain
+               map_gamma: tuple[float, float, float],
+               min_content_boost: tuple[float, float, float],
+               max_content_boost: tuple[float, float, float],
+               hdr_offset: tuple[float, float, float],
+               sdr_offset: tuple[float, float, float]) -> torch.Tensor:
+    map_gamma = torch.tensor(map_gamma, dtype=DTYPE, device=e.device)
+    hdr_offset = torch.tensor(hdr_offset, dtype=DTYPE, device=e.device)
+    sdr_offset = torch.tensor(sdr_offset, dtype=DTYPE, device=e.device)
+    effective_gain = torch.pow(gain, 1.0 / map_gamma)
     log_min = torch.tensor(np.log2(min_content_boost),
                            dtype=DTYPE, device=e.device)[None, None, ...]
     log_max = torch.tensor(np.log2(max_content_boost),
@@ -153,7 +162,6 @@ def generate_gainmap(img_hdr: torch.Tensor,
         max_gain = np.log2(meta.max_content_boost)
     else:
         meta.max_content_boost = np.exp2(max_gain).tolist()
-
 
     max_gain[np.abs(max_gain - min_gain) < 1.0e-8] += 0.1
 

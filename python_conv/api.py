@@ -17,11 +17,11 @@ def hdr_to_gainmap(
         fname: str,
         outdir: str,
         clip_percentile: float = 0.95,
-        hdr_offset: float = 0.015625,
-        sdr_offset: float = 0.015625,
-        min_content_boost: float = None,
-        max_content_boost: float = None,
-        map_gamma: float = 1.0,
+        hdr_offset: tuple[float, float, float] = (0.015625, 0.015625, 0.015625),  # noqa
+        sdr_offset: tuple[float, float, float] = (0.015625,  0.015625,  0.015625),  # noqa
+        min_content_boost: None | tuple[float, float, float] = None,
+        max_content_boost: None | tuple[float, float, float] = None,
+        map_gamma: tuple[float, float, float] = (1.0, 1.0, 1.0),
         hdr_capacity_min: float = 1.0,
         hdr_capacity_max: float = 4.0,
         c3: bool = False,
@@ -62,11 +62,11 @@ def hdr_to_gainmap_batched(
         outdir: str,
         proc: int,
         clip_percentile: float = 0.95,
-        hdr_offset: float = 0.015625,
-        sdr_offset: float = 0.015625,
-        min_content_boost: float = None,
-        max_content_boost: float = None,
-        map_gamma: float = 1.0,
+        hdr_offset: tuple[float, float, float] = (0.015625, 0.015625, 0.015625),  # noqa
+        sdr_offset: tuple[float, float, float] = (0.015625,  0.015625,  0.015625),  # noqa
+        min_content_boost: None | tuple[float, float, float] = None,
+        max_content_boost: None | tuple[float, float, float] = None,
+        map_gamma: tuple[float, float, float] = (1.0, 1.0, 1.0),
         hdr_capacity_min: float = 1.0,
         hdr_capacity_max: float = 4.0,
         c3: bool = False,
