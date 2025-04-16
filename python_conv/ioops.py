@@ -18,7 +18,7 @@ class ImageMetadata:
     oetf: OETF
     bit_depth: int
     clip_percentile: float = 1.0
-    min_max_quantile: float = 0.02
+    min_max_quantile: float = 0.0
     affine_min: float = -1
     affine_max: float = 1
     hdr_offset: tuple[float, float, float] = (0.015625, 0.015625, 0.015625)

@@ -24,7 +24,7 @@ class App:
             fname: str,
             outdir: str,
             clip_percentile: float = 0.95,
-            min_max_quantile: float = 0.02,
+            min_max_quantile: float = 0.0,
             affine_min: float = -1.,
             affine_max: float = 1.,
             hdr_offset: tuple[float, float, float] = (0.015625, 0.015625, 0.015625),  # noqa
@@ -69,7 +69,8 @@ class App:
         outdir = Path(outdir)
         outdir.mkdir(parents=True, exist_ok=True)
         save_tensor(outdir / f"{fname.stem}__gainmap.pt", data["gainmap"])
-        save_png(outdir / f"{fname.stem}__gainmap.png", data["gainmap"])
+        save_png(outdir / f"{fname.stem}__gainmap.png",
+                 (data["gainmap"] - affine_min) / (affine_max - affine_min))
         save_tensor(outdir / f"{fname.stem}__hdr_linear.pt", data["img_hdr_linear"])  # noqa
         save_png(outdir / f"{fname.stem}__sdr.png", data["img_sdr"])
         data["hdr_metadata"].save(outdir / f"{fname.stem}__hdr_metadata.json")
@@ -81,7 +82,7 @@ class App:
             outdir: str,
             proc: int,
             clip_percentile: float = 0.95,
-            min_max_quantile: float = 0.02,
+            min_max_quantile: float = 0.0,
             affine_min: float = -1.,
             affine_max: float = 1.,
             hdr_offset: tuple[float, float, float] = (0.015625, 0.015625, 0.015625),  # noqa
