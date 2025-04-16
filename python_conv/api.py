@@ -24,12 +24,15 @@ def hdr_to_gainmap(
         map_gamma: float = 1.0,
         hdr_capacity_min: float = 1.0,
         hdr_capacity_max: float = 4.0,
+        c3: bool = False,
         cuda: bool = False,
         debug: bool = False):
     if not debug:
         logger.remove()
         logger.add(sys.stderr, level="INFO")
     logger.info(f"Running hdr_to_gainmap fpr {fname}")
+    if isinstance(fname, str):
+        fname = Path(fname)
 
     img_hdr, meta = load_hdr_image(fname)
     if cuda:
@@ -43,14 +46,12 @@ def hdr_to_gainmap(
     meta.hdr_capacity_min = hdr_capacity_min
     meta.hdr_capacity_max = hdr_capacity_max
 
-    data = generate_gainmap(img_hdr, meta)
+    data = generate_gainmap(img_hdr, meta, c3)
 
     outdir = Path(outdir)
     outdir.mkdir(parents=True, exist_ok=True)
-    save_tensor(outdir / f"{fname.stem}__gainmap.pt",
-                data["gainmap"][:, :, :1])
-    save_tensor(outdir / f"{fname.stem}__hdr_linear.pt",
-                data["img_hdr_linear"])
+    save_tensor(outdir / f"{fname.stem}__gainmap.pt", data["gainmap"])
+    save_tensor(outdir / f"{fname.stem}__hdr_linear.pt", data["img_hdr_linear"])  # noqa
     save_png(outdir / f"{fname.stem}__sdr.png", data["img_sdr"])
     data["hdr_metadata"].save(outdir / f"{fname.stem}__hdr_metadata.json")
     data["sdr_metadata"].save(outdir / f"{fname.stem}__sdr_metadata.json")
@@ -68,6 +69,7 @@ def hdr_to_gainmap_batched(
         map_gamma: float = 1.0,
         hdr_capacity_min: float = 1.0,
         hdr_capacity_max: float = 4.0,
+        c3: bool = False,
         cuda: bool = False,
         debug: bool = False):
     if not debug:
@@ -77,7 +79,7 @@ def hdr_to_gainmap_batched(
     fnames = list(Path(indir).iterdir())
     args = [(fname, outdir, clip_percentile, hdr_offset, sdr_offset,
              min_content_boost, max_content_boost, map_gamma,
-             hdr_capacity_min, hdr_capacity_max, cuda, debug)
+             hdr_capacity_min, hdr_capacity_max, c3, cuda, debug)
             for fname in fnames]
     with multiprocessing.Pool(processes=proc) as pool:
         pool.starmap(hdr_to_gainmap, args)

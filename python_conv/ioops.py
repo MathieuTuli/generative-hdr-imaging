@@ -8,7 +8,7 @@ import json
 import torch
 import cv2
 
-from utils import Gamut, OETF
+from utils import Gamut, OETF, DTYPE
 
 
 @dataclass
@@ -19,8 +19,8 @@ class ImageMetadata:
     clip_percentile: float = 1.0
     hdr_offset: float = 0.015625
     sdr_offset: float = 0.015625
-    min_content_boost: float = 1.0
-    max_content_boost: float = 4.0
+    min_content_boost: tuple[float, float, float] = (1.0, 1.0, 1.0)
+    max_content_boost: tuple[float, float, float] = (4.0, 4.0, 4.0)
     map_gamma: float = 1.0
     hdr_capacity_min: float = 1.0
     hdr_capacity_max: float = 4.0
@@ -64,7 +64,7 @@ def load_image(fname: Path):
         'float32': torch.float32,
         'float64': torch.float64
     }
-    dtype = dtype_mapping.get(str(image.dtype), torch.float32)
+    dtype = dtype_mapping.get(str(image.dtype), DTYPE)
     image = torch.tensor(image, dtype=dtype)
     return image
 

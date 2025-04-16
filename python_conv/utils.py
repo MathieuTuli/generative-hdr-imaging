@@ -2,6 +2,8 @@ from typing import Callable, List
 from enum import Enum, auto
 import torch
 
+DTYPE = torch.float32
+
 # --- Types ---
 ColorTransformFn = Callable[[torch.Tensor], torch.Tensor]
 LuminanceFn = Callable[[torch.Tensor], float]
@@ -132,7 +134,7 @@ SRGB_B = 0.072192
 
 def sRGBLuminance(e: torch.Tensor) -> float:
     return torch.matmul(e, torch.tensor([SRGB_R, SRGB_G, SRGB_B],
-                                        dtype=torch.float32,
+                                        dtype=DTYPE,
                                         device=e.device))[..., None]
 
 
@@ -143,9 +145,9 @@ SRGB_CR = 2.0 * (1.0 - SRGB_R)
 def sRGB_RGBToYUV(e_gamma: torch.Tensor) -> torch.Tensor:
     y_gamma = sRGBLuminance(e_gamma)
     return torch.cat(
-        y_gamma[..., None],
-        ((e_gamma[:, :, 2] - y_gamma) / SRGB_CB)[..., None],
-        ((e_gamma[:, :, 0] - y_gamma) / SRGB_CR)[..., None], dim=2)
+        y_gamma,
+        ((e_gamma[:, :, 2:3] - y_gamma) / SRGB_CB),
+        ((e_gamma[:, :, 0:1] - y_gamma) / SRGB_CR), dim=2)
 
 
 SRGB_GCB = SRGB_B * SRGB_CB / SRGB_G
@@ -157,9 +159,9 @@ def sRGB_YUVToRGB(e_gamma: torch.Tensor) -> torch.Tensor:
     u = e_gamma[..., 1]
     v = e_gamma[..., 2]
     rgb = torch.empty_like(e_gamma)
-    rgb[..., 0] = y + SRGB_CR * v  # R
-    rgb[..., 1] = y - SRGB_GCB * u - SRGB_GCR * v  # G
-    rgb[..., 2] = y + SRGB_CB * u  # B
+    rgb[..., 0] = y + SRGB_CR * v
+    rgb[..., 1] = y - SRGB_GCB * u - SRGB_GCR * v
+    rgb[..., 2] = y + SRGB_CB * u
     return torch.clip(rgb, 0.0, 1.0)
 
 
@@ -209,7 +211,7 @@ P3_B = 0.0792869
 
 def P3Luminance(e: torch.Tensor) -> float:
     return torch.matmul(e, torch.tensor([P3_R, P3_G, P3_B],
-                                        dtype=torch.float32,
+                                        dtype=DTYPE,
                                         device=e.device))[..., None]
 
 
@@ -221,14 +223,14 @@ P3_CR = 1.402
 
 
 def P3_RGBToYUV(e_gamma: torch.Tensor) -> torch.Tensor:
-    y_gamma = (P3_YR * e_gamma[..., 0] +
-               P3_YG * e_gamma[..., 1] +
-               P3_YB * e_gamma[..., 2])
+    y_gamma = (P3_YR * e_gamma[..., 0:1] +
+               P3_YG * e_gamma[..., 1:2] +
+               P3_YB * e_gamma[..., 2:3])
 
     yuv = torch.empty_like(e_gamma)
-    yuv[..., 0] = y_gamma
-    yuv[..., 1] = (e_gamma[..., 2] - y_gamma) / P3_CB  # U component
-    yuv[..., 2] = (e_gamma[..., 0] - y_gamma) / P3_CR  # V component
+    yuv[..., 0:1] = y_gamma
+    yuv[..., 1:2] = (e_gamma[..., 2:3] - y_gamma) / P3_CB  # U component
+    yuv[..., 2:3] = (e_gamma[..., 0:1] - y_gamma) / P3_CR  # V component
     return yuv
 
 
@@ -238,10 +240,10 @@ P3_GCR = P3_YR * P3_CR / P3_YG
 
 def P3_YUVToRGB(e_gamma: torch.Tensor) -> torch.Tensor:
     rgb = torch.empty_like(e_gamma)
-    rgb[..., 0] = e_gamma[..., 0] + P3_CR * e_gamma[..., 2]  # R
+    rgb[..., 0] = e_gamma[..., 0] + P3_CR * e_gamma[..., 2]
     rgb[..., 1] = e_gamma[..., 0] - P3_GCB * \
-        e_gamma[..., 1] - P3_GCR * e_gamma[..., 2]  # G
-    rgb[..., 2] = e_gamma[..., 0] + P3_CB * e_gamma[..., 1]  # B
+        e_gamma[..., 1] - P3_GCR * e_gamma[..., 2]
+    rgb[..., 2] = e_gamma[..., 0] + P3_CB * e_gamma[..., 1]
     return torch.clip(rgb, 0.0, 1.0)
 
 # ==============================================================================
@@ -256,7 +258,7 @@ BT2100_B = 0.059302
 
 def Bt2100Luminance(e: torch.Tensor) -> float:
     return torch.matmul(e, torch.tensor([BT2100_R, BT2100_G, BT2100_B],
-                                        dtype=torch.float32,
+                                        dtype=DTYPE,
                                         device=e.device))[..., None]
 
 
@@ -267,9 +269,9 @@ BT2100_CR = 2.0 * (1.0 - BT2100_R)
 def Bt2100_RGBToYUV(e_gamma: torch.Tensor) -> torch.Tensor:
     y_gamma = Bt2100Luminance(e_gamma)
     yuv = torch.empty_like(e_gamma)
-    yuv[..., 0] = y_gamma
-    yuv[..., 1] = (e_gamma[..., 2] - y_gamma) / BT2100_CB
-    yuv[..., 2] = (e_gamma[..., 0] - y_gamma) / BT2100_CR
+    yuv[..., 0:1] = y_gamma
+    yuv[..., 1:2] = (e_gamma[..., 2:3] - y_gamma) / BT2100_CB
+    yuv[..., 2:3] = (e_gamma[..., 0:1] - y_gamma) / BT2100_CR
     return yuv
 
 
@@ -279,10 +281,10 @@ BT2100_GCR = BT2100_R * BT2100_CR / BT2100_G
 
 def Bt2100_YUVToRGB(e_gamma: torch.Tensor) -> torch.Tensor:
     rgb = torch.empty_like(e_gamma)
-    rgb[..., 0] = e_gamma[..., 0] + BT2100_CR * e_gamma[..., 2]  # R
+    rgb[..., 0] = e_gamma[..., 0] + BT2100_CR * e_gamma[..., 2]
     rgb[..., 1] = e_gamma[..., 0] - BT2100_GCB * \
-        e_gamma[..., 1] - BT2100_GCR * e_gamma[..., 2]  # G
-    rgb[..., 2] = e_gamma[..., 0] + BT2100_CB * e_gamma[..., 1]  # B
+        e_gamma[..., 1] - BT2100_GCR * e_gamma[..., 2]
+    rgb[..., 2] = e_gamma[..., 0] + BT2100_CB * e_gamma[..., 1]
     return torch.clip(rgb, 0.0, 1.0)
 
 # ==============================================================================
@@ -338,7 +340,7 @@ def HLG_OOTF(e: torch.Tensor, luminance: LuminanceFn) -> torch.Tensor:
 
 def HLG_OOTFApprox(e: torch.Tensor,
                    luminance: LuminanceFn | None = None) -> torch.Tensor:
-    return torch.pow(e, torch.tensor(OOTF_GAMMA, dtype=torch.float32,
+    return torch.pow(e, torch.tensor(OOTF_GAMMA, dtype=DTYPE,
                                      device=e.device))
 
 
@@ -348,7 +350,7 @@ def HLG_InvOOTF(e: torch.Tensor, luminance: LuminanceFn) -> torch.Tensor:
 
 
 def HLG_InvOOTFApprox(e: torch.Tensor) -> torch.Tensor:
-    return torch.pow(e, torch.tensor((1.0 / OOTF_GAMMA), dtype=torch.float32,
+    return torch.pow(e, torch.tensor((1.0 / OOTF_GAMMA), dtype=DTYPE,
                                      device=e.device))
 
 # ==============================================================================
@@ -382,14 +384,14 @@ def PQ_OETFLUT(e: float) -> float:
 
 
 def PQ_InvOETF(e_gamma: torch.Tensor) -> torch.Tensor:
-    val = torch.pow(e_gamma, torch.tensor(1.0 / PQ_M2, dtype=torch.float32,
+    val = torch.pow(e_gamma, torch.tensor(1.0 / PQ_M2, dtype=DTYPE,
                                           device=e_gamma.device))
     numerator = torch.maximum(val - PQ_C1,
-                              torch.tensor(0.0, dtype=torch.float32,
+                              torch.tensor(0.0, dtype=DTYPE,
                                            device=e_gamma.device))
     denominator = PQ_C2 - PQ_C3 * val
     return torch.pow(numerator / denominator,
-                     torch.tensor(1.0 / PQ_M1, dtype=torch.float32,
+                     torch.tensor(1.0 / PQ_M1, dtype=DTYPE,
                                   device=e_gamma.device))
 
 
@@ -414,32 +416,32 @@ def ConvertGamut(e: torch.Tensor, coeffs: torch.Tensor) -> torch.Tensor:
 BT709_TO_P3 = torch.tensor([[0.822462,  0.177537,  0.000001],
                             [0.033194,  0.966807, -0.000001],
                             [0.017083,  0.072398,  0.91052]],
-                           dtype=torch.float32)
+                           dtype=DTYPE)
 
 BT709_TO_BT2100 = torch.tensor([[0.627404,  0.329282,  0.043314],
                                 [0.069097,  0.919541,  0.011362],
                                 [0.016392,  0.088013,  0.895595]],
-                               dtype=torch.float32)
+                               dtype=DTYPE)
 
 P3_TO_BT709 = torch.tensor([[1.22494,   -0.22494,   0.0],
                             [-0.042057,  1.042057,  0.0],
                             [-0.019638, -0.078636,  1.098274]],
-                           dtype=torch.float32)
+                           dtype=DTYPE)
 
 P3_TO_BT2100 = torch.tensor([[0.753833,  0.198597,  0.04757],
                              [0.045744,  0.941777,  0.012479],
                              [-0.00121,  0.017601,  0.983608]],
-                            dtype=torch.float32)
+                            dtype=DTYPE)
 
 BT2100_TO_BT709 = torch.tensor([[1.660491,  -0.587641, -0.07285],
                                 [-0.124551,  1.1329,   -0.008349],
                                 [-0.018151, -0.100579,  1.11873]],
-                               dtype=torch.float32)
+                               dtype=DTYPE)
 
 BT2100_TO_P3 = torch.tensor([[1.343578,  -0.282179, -0.061399],
                              [-0.065298,  1.075788,  -0.01049],
                              [0.002822, -0.019598,  1.016777]],
-                            dtype=torch.float32)
+                            dtype=DTYPE)
 
 
 def Bt709ToP3(e: torch.Tensor) -> torch.Tensor:
@@ -470,32 +472,32 @@ def Bt2100ToP3(e: torch.Tensor) -> torch.Tensor:
 YUV_BT709_TO_BT601 = torch.tensor([[1.0,      0.101579,   0.196076],
                                    [0.0,      0.989854,  -0.110653],
                                    [0.0,     -0.072453,   0.983398]],
-                                  dtype=torch.float32)
+                                  dtype=DTYPE)
 
 YUV_BT709_TO_BT2100 = torch.tensor([[1.0,     -0.016969,   0.096312],
                                     [0.0,      0.995306,  -0.051192],
                                     [0.0,      0.011507,   1.002637]],
-                                   dtype=torch.float32)
+                                   dtype=DTYPE)
 
 YUV_BT601_TO_BT709 = torch.tensor([[1.0,     -0.118188,  -0.212685],
                                    [0.0,      1.018640,   0.114618],
                                    [0.0,      0.075049,   1.025327]],
-                                  dtype=torch.float32)
+                                  dtype=DTYPE)
 
 YUV_BT601_TO_BT2100 = torch.tensor([[1.0,     -0.128245,  -0.115879],
                                     [0.0,      1.010016,   0.061592],
                                     [0.0,      0.086969,   1.029350]],
-                                   dtype=torch.float32)
+                                   dtype=DTYPE)
 
 YUV_BT2100_TO_BT709 = torch.tensor([[1.0,      0.018149,  -0.095132],
                                     [0.0,      1.004123,   0.051267],
                                     [0.0,     -0.011524,   0.996782]],
-                                   dtype=torch.float32)
+                                   dtype=DTYPE)
 
 YUV_BT2100_TO_BT601 = torch.tensor([[1.0,      0.117887,   0.105521],
                                     [0.0,      0.995211,  -0.059549],
                                     [0.0,     -0.084085,   0.976518]],
-                                   dtype=torch.float32)
+                                   dtype=DTYPE)
 
 
 def YUV_Bt709ToBt601(e: torch.Tensor) -> torch.Tensor:
@@ -729,5 +731,5 @@ def ApplyToneMapping(rgb: torch.Tensor, mode: ToneMapping,
         ApplyToneMapping_scalar(rgb[0], mode, target_nits, max_nits),
         ApplyToneMapping_scalar(rgb[1], mode, target_nits, max_nits),
         ApplyToneMapping_scalar(rgb[2], mode, target_nits, max_nits),
-        dtype=torch.float32,
+        dtype=DTYPE,
         device=rgb.device)
