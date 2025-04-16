@@ -28,11 +28,12 @@ def compute_gain(hdr_y_nits: torch.Tensor, sdr_y_nits: torch.Tensor,
 
 
 def affine_map_gain(gainlog2: torch.Tensor,
-                    min_gainlog2: float,
-                    max_gainlog2: float,
+                    min_gainlog2: tuple[float, float, float],
+                    max_gainlog2: tuple[float, float, float],
                     map_gamma: tuple[float, float, float]):
     map_gamma = torch.tensor(map_gamma, dtype=DTYPE, device=gainlog2.device)
-    mapped_val = (gainlog2 - min_gainlog2) / (max_gainlog2 - min_gainlog2)
+    mapped_val = (gainlog2 - min_gainlog2[None, None, ...]) /\
+        (max_gainlog2 - min_gainlog2[None, None, ...])
     mapped_val = torch.clip(mapped_val, 0., 1.)
     mapped_val = torch.pow(mapped_val, map_gamma)
     return mapped_val
@@ -170,7 +171,8 @@ def generate_gainmap(img_hdr: torch.Tensor,
     logger.debug(
         f"min/max gain (exp2): {np.exp2(min_gain)}/{np.exp2(max_gain)}")
 
-    gainmap = affine_map_gain(gainmap, min_gain, max_gain, meta.map_gamma)
+    gainmap = affine_map_gain(gainmap, min_gain.astype(np.float32),
+                              max_gain.astype(np.float32), meta.map_gamma)
 
     sdr_meta = ImageMetadata.from_dict(meta.to_dict())
     sdr_meta.gamut = utils.Gamut.BT709

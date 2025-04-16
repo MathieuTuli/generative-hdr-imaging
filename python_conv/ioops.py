@@ -82,7 +82,6 @@ def load_hdr_image(fname: Path):
             check=True,
             text=True
         )
-        # Parse the JSON output
         metadata_list = json.loads(result.stdout)
         metadata_raw = metadata_list[0] if metadata_list else {}
     except subprocess.CalledProcessError as e:

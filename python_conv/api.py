@@ -33,6 +33,15 @@ class App:
             hdr_capacity_max: float = 4.0,
             c3: bool = False,
             cuda: bool = False,):
+        if min_content_boost is not None:
+            assert isinstance(min_content_boost, tuple), \
+                f"Got {min_content_boost}"
+        if max_content_boost is not None:
+            assert isinstance(max_content_boost, tuple), \
+                f"Got {max_content_boost}"
+        assert isinstance(map_gamma, tuple), f"Got {map_gamma}"
+        assert isinstance(hdr_offset, tuple), f"Got {hdr_offset}"
+        assert isinstance(sdr_offset, tuple), f"Got {sdr_offset}"
         logger.info(f"Running hdr_to_gainmap fpr {fname}")
         if isinstance(fname, str):
             fname = Path(fname)
@@ -54,6 +63,7 @@ class App:
         outdir = Path(outdir)
         outdir.mkdir(parents=True, exist_ok=True)
         save_tensor(outdir / f"{fname.stem}__gainmap.pt", data["gainmap"])
+        save_png(outdir / f"{fname.stem}__gainmap.png", data["gainmap"])
         save_tensor(outdir / f"{fname.stem}__hdr_linear.pt", data["img_hdr_linear"])  # noqa
         save_png(outdir / f"{fname.stem}__sdr.png", data["img_sdr"])
         data["hdr_metadata"].save(outdir / f"{fname.stem}__hdr_metadata.json")
@@ -74,6 +84,16 @@ class App:
             hdr_capacity_max: float = 4.0,
             c3: bool = False,
             cuda: bool = False,):
+        if min_content_boost is not None:
+            assert isinstance(min_content_boost, tuple), \
+                f"Got {min_content_boost}"
+        if max_content_boost is not None:
+            assert isinstance(max_content_boost, tuple), \
+                f"Got {max_content_boost}"
+        assert isinstance(map_gamma, tuple), f"Got {map_gamma}"
+        assert isinstance(hdr_offset, tuple), f"Got {hdr_offset}"
+        assert isinstance(sdr_offset, tuple), f"Got {sdr_offset}"
+
         fnames = list(Path(indir).iterdir())
         args = [(fname, outdir, clip_percentile, hdr_offset, sdr_offset,
                  min_content_boost, max_content_boost, map_gamma,
