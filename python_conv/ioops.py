@@ -5,6 +5,8 @@ from typing import Any
 import subprocess
 import json
 
+from loguru import logger
+
 import torch
 import cv2
 
@@ -124,3 +126,19 @@ def save_png(fname: Path, data):
                        255).to(torch.uint8).cpu().numpy(),
             cv2.COLOR_BGR2RGB)
     cv2.imwrite(str(fname), data)
+
+
+def save_json(fname: Path, data: dict[str, Any]):
+    fname.parent.mkdir(exist_ok=True, parents=True)
+    if fname.exists():
+        c = 0
+        new_fname = None
+        while True:
+            new_fname = fname.with_stem(fname.stem + f"_{c}")
+            if not new_fname.exists():
+                break
+            c += 1
+        logger.info(f"Attempting to save json to {fname} which exists, incrementing file as {new_fname}")  # noqa
+        fname = new_fname
+    with fname.open("w") as f:
+        json.dump(data, f, indent=2)

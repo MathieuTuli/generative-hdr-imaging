@@ -5,11 +5,12 @@ import sys
 
 from loguru import logger
 
+import numpy as np
 import torch
 import fire
 
 from ioops import (ImageMetadata, load_hdr_image,
-                   save_png, save_tensor, load_image)
+                   save_png, save_tensor, load_image, save_json)
 from hdr_to_gainmap import generate_gainmap, compare_hdr_to_uhdr
 
 
@@ -118,14 +119,64 @@ class App:
             hdr_path: Path,
             sdr_path: Path,
             gainmap_path: Path,
-            sdr_metadata: Path,
-            c3: bool = False,
-    ):
+            sdr_metadata_path: Path,
+            c3: bool = False,) -> dict[str,  torch.Tensor]:
+        if isinstance(hdr_path, str):
+            hdr_path = Path(hdr_path)
+        if isinstance(sdr_path, str):
+            sdr_path = Path(sdr_path)
+        if isinstance(gainmap_path, str):
+            gainmap_path = Path(gainmap_path)
+        if isinstance(sdr_metadata_path, str):
+            sdr_metadata_path = Path(sdr_metadata_path)
+
+        assert hdr_path.stem.split("__")[0] == sdr_path.stem.split("__")[0]
+        assert sdr_path.stem.split("__")[0] == gainmap_path.stem.split("__")[0]
+        assert sdr_path.stem.split(
+            "__")[0] == sdr_metadata_path.stem.split("__")[0]
         img_hdr, hdr_meta = load_hdr_image(hdr_path)
         img_sdr = load_image(sdr_path)
-        sdr_meta = ImageMetadata.from_json(sdr_metadata)
+        sdr_meta = ImageMetadata.from_json(sdr_metadata_path)
         gainmap = torch.load(gainmap_path, weights_only=True)
-        compare_hdr_to_uhdr(img_hdr, img_sdr, gainmap, hdr_meta, sdr_meta, c3)
+        return compare_hdr_to_uhdr(
+            img_hdr, img_sdr, gainmap, hdr_meta, sdr_meta, c3)
+
+    def compare_reconstruction_batched(self,
+                                       hdrs_glob_pattern: str,
+                                       sdrs_glob_pattern: str,
+                                       gainmaps_glob_pattern: str,
+                                       metadatas_glob_pattern: str,
+                                       output_path: str):
+        output_path = Path(output_path)
+        assert output_path.suffix == ".json", \
+            "Expected output path to be .json"
+        hdrs = sorted(Path().glob(hdrs_glob_pattern))
+        sdrs = sorted(Path().glob(sdrs_glob_pattern))
+        metas = sorted(Path().glob(metadatas_glob_pattern))
+        gainmaps = sorted(Path().glob(gainmaps_glob_pattern))
+
+        psnrs_lum, psnrs_img = list(), list()
+        for hdr, sdr, gainmap, meta in zip(hdrs, sdrs, gainmaps, metas):
+            ret = self.compare_reconstruction(hdr, sdr, gainmap, meta)
+            psnrs_lum.append(ret["psnr_lum"])
+            psnrs_img.append(ret["psnr_img"])
+
+        results = {
+            "hdrs_glob_pattern": hdrs_glob_pattern,
+            "sdrs_glob_pattern": sdrs_glob_pattern,
+            "metadatas_glob_pattern": metadatas_glob_pattern,
+            "gainmaps_glob_pattern": gainmaps_glob_pattern,
+            "mean_psnr_lum": np.mean(psnrs_lum).item(),
+            "std_psnr_lum": np.std(psnrs_lum).item(),
+            "mean_psnr_img": np.mean(psnrs_img).item(),
+            "std_psnr_img": np.std(psnrs_img).item(),
+        }
+        logger.info(f"Mean PSNR Lum: {results['mean_psnr_lum']}")
+        logger.info(f"STD PSNR Lum: {results['std_psnr_lum']}")
+        logger.info(f"Mean PSNR Image: {results['mean_psnr_img']}")
+        logger.info(f"STD PSNR Image: {results['std_psnr_img']}")
+
+        save_json(output_path, results)
 
 
 if __name__ == '__main__':
