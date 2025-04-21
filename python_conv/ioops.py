@@ -5,8 +5,11 @@ from typing import Any
 import subprocess
 import json
 
+from einops import repeat
 from loguru import logger
+import imageio
 
+import numpy as np
 import torch
 import cv2
 
@@ -94,22 +97,22 @@ def load_hdr_image(fname: Path):
 
     bit_depth = metadata_raw.get("BitDepth", 16)
     oetf = metadata_raw.get("TransferCharacteristics", "Linear")
-    if oetf.find("HLG") > 0 or oetf.find("2020") >= 0:
+    if oetf.find("HLG") >= 0 or oetf.find("2020") >= 0:
         oetf = OETF.HLG
-    elif oetf.find("PQ") > 0 or oetf.find("2084") >= 0:
+    elif oetf.find("PQ") >= 0 or oetf.find("2084") >= 0:
         oetf = OETF.PQ
-    elif oetf.find("709") > 0 or oetf.find("sRGB") >= 0:
+    elif oetf.find("709") >= 0 or oetf.find("sRGB") >= 0:
         oetf = OETF.SRGB
     elif oetf == "Linear":
         oetf = OETF.LINEAR
     else:
         raise ValueError(f"Unknown TransferCharacteristics {oetf}")
-    gamut = metadata_raw.get("ColorPrimaries", "sRGB")
-    if gamut.find("709") > 0 or gamut.find("sRGB") >= 0:
+    gamut = metadata_raw.get("ColorPrimaries", "BT2100")
+    if gamut.find("709") >= 0 or gamut.find("sRGB") >= 0:
         gamut = Gamut.BT709
-    elif gamut.find("P3") > 0 or gamut.find("SMPTE") >= 0:
+    elif gamut.find("P3") >= 0 or gamut.find("SMPTE") >= 0:
         gamut = Gamut.P3
-    elif gamut.find("2100") > 0 or gamut.find("2020") >= 0:
+    elif gamut.find("2100") >= 0 or gamut.find("2020") >= 0:
         gamut = Gamut.BT2100
     else:
         raise ValueError(f"Unknown ColorPrimaries {gamut}")
@@ -117,17 +120,39 @@ def load_hdr_image(fname: Path):
     return image, metadata
 
 
-def save_tensor(fname: Path, data):
-    torch.save(data, fname)
+def save_tensor(fname: Path, data: torch.Tensor, torch: bool = False):
+    if torch:
+        torch.save(data.cpu(), fname)
+    else:
+        np.save(fname, data.cpu().numpy())
 
 
-def save_png(fname: Path, data):
+def load_tensor(fname: Path) -> torch.Tensor:
+    if fname.suffix == ".npy":
+        arr = torch.from_numpy(np.load(fname))
+        if len(arr.shape) == 2 or (len(arr.shape) == 3 and arr.shape[-1] == 1):
+            arr = repeat(arr, "w h -> w h 3")
+        return arr
+    else:
+        return torch.load(fname, weights_only=False)
+
+
+def save_png(fname: Path, data: np.ndarray, uint16: bool = False):
     if data.dtype not in {torch.uint8, torch.uint16}:
-        data = cv2.cvtColor(
-            torch.clip(data * 255. + 0.5, 0,
-                       255).to(torch.uint8).cpu().numpy(),
-            cv2.COLOR_BGR2RGB)
-    cv2.imwrite(str(fname), data)
+        if uint16:
+            data = cv2.cvtColor(
+                torch.clip(data * 65535. + 0.5, 0,
+                           65535).to(torch.uint16).cpu().numpy(),
+                cv2.COLOR_BGR2RGB).astype(np.uint16)
+        else:
+            data = cv2.cvtColor(
+                torch.clip(data * 255. + 0.5, 0,
+                           255).to(torch.uint8).cpu().numpy(),
+                cv2.COLOR_BGR2RGB)
+    if uint16:
+        imageio.imwrite(str(fname), data)
+    else:
+        cv2.imwrite(str(fname), data)
 
 
 def save_json(fname: Path, data: dict[str, Any]):

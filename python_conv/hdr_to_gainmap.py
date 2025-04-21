@@ -93,6 +93,7 @@ def apply_gain(e: torch.Tensor,
 
 def generate_gainmap(img_hdr: torch.Tensor,
                      meta: ImageMetadata,
+                     abs_clip: bool = True,
                      c3: bool = False
                      ) -> dict[str, torch.Tensor | ImageMetadata]:
     hdr_inv_oetf = utils.GetInvOETFFn(meta.oetf)
@@ -120,8 +121,13 @@ def generate_gainmap(img_hdr: torch.Tensor,
     img_hdr_lin = hdr_gamut_conv(img_hdr_lin)
     img_hdr_lin[img_hdr_lin < 0.] = 0.
 
-    clip_value = torch.quantile(img_hdr_lin.reshape(-1),
-                                meta.clip_percentile)
+    if abs_clip:
+        clip_value = torch.tensor(meta.clip_percentile,
+                                  dtype=DTYPE,
+                                  device=img_hdr_lin.device)
+    else:
+        clip_value = torch.quantile(img_hdr_lin.reshape(-1),
+                                    meta.clip_percentile)
     logger.debug(
         f"HDR {meta.clip_percentile}th-percentile clip value: {clip_value}")
 
@@ -288,4 +294,37 @@ def compare_hdr_to_uhdr(img_hdr: torch.Tensor,
     return {
         "psnr_lum": psnr_lum,
         "psnr_img": psnr_img,
+    }
+
+
+def reconstruct_hdr(img_sdr: torch.Tensor,
+                    gainmap: torch.Tensor,
+                    hdr_meta: ImageMetadata,
+                    sdr_meta: ImageMetadata,
+                    c3: bool = False) -> dict[str, torch.Tensor]:
+    hdr_oetf = utils.GetOETFFn(hdr_meta.oetf)
+    hdr_inv_ootf = utils.GetInvOOTFFn(hdr_meta.oetf)
+    hdr_luminance_fn = utils.GetLuminanceFn(hdr_meta.gamut)
+    hdr_peak_nits = utils.GetReferenceDisplayPeakLuminanceInNits(hdr_meta.oetf)
+
+    sdr_inv_oetf = utils.GetInvOETFFn(sdr_meta.oetf)
+    sdr_hdr_gamut_conv = utils.GetGamutConversionFn(
+        src_gamut=sdr_meta.gamut, dst_gamut=utils.Gamut.BT2100)
+
+    img_sdr_norm = img_sdr.to(DTYPE) / float((1 << sdr_meta.bit_depth) - 1)
+
+    img_sdr_lin = sdr_inv_oetf(img_sdr_norm)
+    img_sdr_lin = sdr_hdr_gamut_conv(img_sdr_lin)
+    img_hdr_recon = apply_gain(
+        img_sdr_lin * utils.SDR_WHITE_NITS, gainmap, sdr_meta.map_gamma,
+        sdr_meta.min_content_boost, sdr_meta.max_content_boost,
+        sdr_meta.hdr_offset, sdr_meta.sdr_offset,
+        sdr_meta.affine_min, sdr_meta.affine_max)
+    img_hdr_recon /= hdr_peak_nits
+    img_hdr_recon = torch.clip(img_hdr_recon, 0., 1.)
+    img_hdr_recon = hdr_inv_ootf(img_hdr_recon, hdr_luminance_fn)
+    img_hdr_recon = hdr_oetf(img_hdr_recon)
+
+    return {
+        "img_hdr_recon": img_hdr_recon,
     }
