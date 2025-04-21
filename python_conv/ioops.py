@@ -92,25 +92,27 @@ def load_hdr_image(fname: Path):
     except subprocess.CalledProcessError as e:
         raise RuntimeError(f"ExifTool returned an error: {e.stderr}")
 
-    bit_depth = metadata_raw["BitDepth"]
-    oetf = metadata_raw["TransferCharacteristics"]
-    if oetf.find("HLG") > 0 or oetf.find("2020") > 0:
+    bit_depth = metadata_raw.get("BitDepth", 16)
+    oetf = metadata_raw.get("TransferCharacteristics", "Linear")
+    if oetf.find("HLG") > 0 or oetf.find("2020") >= 0:
         oetf = OETF.HLG
-    elif oetf.find("PQ") > 0 or oetf.find("2084") > 0:
+    elif oetf.find("PQ") > 0 or oetf.find("2084") >= 0:
         oetf = OETF.PQ
-    elif oetf.find("709") > 0 or oetf.find("sRGB") > 0:
+    elif oetf.find("709") > 0 or oetf.find("sRGB") >= 0:
         oetf = OETF.SRGB
+    elif oetf == "Linear":
+        oetf = OETF.LINEAR
     else:
-        raise ValueError("Unknown TransferCharacteristics {oetf}")
-    gamut = metadata_raw["ColorPrimaries"]
-    if gamut.find("709") > 0 or gamut.find("sRGB") > 0:
+        raise ValueError(f"Unknown TransferCharacteristics {oetf}")
+    gamut = metadata_raw.get("ColorPrimaries", "sRGB")
+    if gamut.find("709") > 0 or gamut.find("sRGB") >= 0:
         gamut = Gamut.BT709
-    elif gamut.find("P3") > 0 or gamut.find("SMPTE") > 0:
+    elif gamut.find("P3") > 0 or gamut.find("SMPTE") >= 0:
         gamut = Gamut.P3
-    elif gamut.find("2100") > 0 or gamut.find("2020") > 0:
+    elif gamut.find("2100") > 0 or gamut.find("2020") >= 0:
         gamut = Gamut.BT2100
     else:
-        raise ValueError("Unknown ColorPrimaries {gamut}")
+        raise ValueError(f"Unknown ColorPrimaries {gamut}")
     metadata = ImageMetadata(gamut=gamut, oetf=oetf, bit_depth=bit_depth)
     return image, metadata
 

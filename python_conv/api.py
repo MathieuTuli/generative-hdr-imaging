@@ -120,7 +120,8 @@ class App:
             sdr_path: Path,
             gainmap_path: Path,
             sdr_metadata_path: Path,
-            c3: bool = False,) -> dict[str,  torch.Tensor]:
+            c3: bool = False,
+            ret: bool = False) -> dict[str,  torch.Tensor]:
         if isinstance(hdr_path, str):
             hdr_path = Path(hdr_path)
         if isinstance(sdr_path, str):
@@ -138,8 +139,10 @@ class App:
         img_sdr = load_image(sdr_path)
         sdr_meta = ImageMetadata.from_json(sdr_metadata_path)
         gainmap = torch.load(gainmap_path, weights_only=True)
-        return compare_hdr_to_uhdr(
+        data = compare_hdr_to_uhdr(
             img_hdr, img_sdr, gainmap, hdr_meta, sdr_meta, c3)
+        if ret:
+            return data
 
     def compare_reconstruction_batched(self,
                                        hdrs_glob_pattern: str,
@@ -176,7 +179,7 @@ class App:
         logger.info(f"Mean PSNR Image: {results['mean_psnr_img']}")
         logger.info(f"STD PSNR Image: {results['std_psnr_img']}")
 
-        save_json(output_path, results)
+        save_json(output_path, results, ret=True)
 
 
 if __name__ == '__main__':
