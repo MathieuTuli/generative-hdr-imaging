@@ -84,7 +84,7 @@ class App:
 
     def hdr_to_gainmap_batched(
             self,
-            indir: str,
+            input_glob_pattern: str,
             outdir: str,
             proc: int,
             clip_percentile: float = 0.95,
@@ -110,7 +110,14 @@ class App:
         assert isinstance(hdr_offset, tuple), f"Got {hdr_offset}"
         assert isinstance(sdr_offset, tuple), f"Got {sdr_offset}"
 
-        fnames = list(Path(indir).iterdir())
+        if Path(input_glob_pattern).is_dir():
+            fnames = list(Path(input_glob_pattern).iterdir())
+        elif Path(input_glob_pattern).is_file():
+            with open(input_glob_pattern, "r") as f:
+                fnames = [x.strip() for x in f.readlines()]
+        else:
+            fnames = list(Path().glob(input_glob_pattern))
+        assert len(fnames) > 0, f"No files found from {input_glob_pattern}"
         args = [(fname, outdir, clip_percentile, min_max_quantile,
                  affine_min, affine_max, hdr_offset, sdr_offset,
                  min_content_boost, max_content_boost, map_gamma,
