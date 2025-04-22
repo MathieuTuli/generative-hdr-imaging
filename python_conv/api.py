@@ -91,6 +91,7 @@ class App:
             input_glob_pattern: str,
             outdir: str,
             proc: int,
+            root_dir: str = None,
             clip_percentile: float = 0.95,
             min_max_quantile: float = 0.0,
             affine_min: float = -1.,
@@ -117,8 +118,14 @@ class App:
         if Path(input_glob_pattern).is_dir():
             fnames = list(Path(input_glob_pattern).iterdir())
         elif Path(input_glob_pattern).is_file():
+            if root_dir is None:
+                logger.warning(
+                    "The root dir is set to None, but input is a file")
+            else:
+                root_dir = Path(root_dir)
+                assert root_dir.exists() and root_dir.is_dir()
             with open(input_glob_pattern, "r") as f:
-                fnames = [x.strip() for x in f.readlines()]
+                fnames = [root_dir / x.strip() for x in f.readlines()]
         else:
             fnames = list(Path().glob(input_glob_pattern))
         assert len(fnames) > 0, f"No files found from {input_glob_pattern}"
