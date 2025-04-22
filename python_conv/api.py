@@ -71,7 +71,7 @@ class App:
         meta.hdr_capacity_min = hdr_capacity_min
         meta.hdr_capacity_max = hdr_capacity_max
 
-        data = generate_gainmap(img_hdr, meta, c3, abs_clip)
+        data = generate_gainmap(img_hdr, meta, abs_clip, c3)
 
         outdir = Path(outdir)
         outdir.mkdir(parents=True, exist_ok=True)
