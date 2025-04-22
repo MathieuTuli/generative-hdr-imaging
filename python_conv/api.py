@@ -1,3 +1,4 @@
+from os.path import commonpath, relpath
 from pathlib import Path
 
 import multiprocessing
@@ -74,13 +75,16 @@ class App:
         outdir = Path(outdir)
         outdir.mkdir(parents=True, exist_ok=True)
         clip_str = str(clip_percentile).replace(".", "-")
-        save_tensor(outdir / f"{fname.stem}__{clip_str}_gainmap.pt", data["gainmap"])
+        save_tensor(
+            outdir / f"{fname.stem}__{clip_str}_gainmap.pt", data["gainmap"])
         save_png(outdir / f"{fname.stem}__{clip_str}_gainmap.png",
                  (data["gainmap"] - affine_min) / (affine_max - affine_min))
         save_tensor(outdir / f"{fname.stem}__{clip_str}_hdr_linear.pt", data["img_hdr_linear"])  # noqa
         save_png(outdir / f"{fname.stem}__{clip_str}_sdr.png", data["img_sdr"])
-        data["hdr_metadata"].save(outdir / f"{fname.stem}__{clip_str}_hdr_metadata.json")
-        data["sdr_metadata"].save(outdir / f"{fname.stem}__{clip_str}_sdr_metadata.json")
+        data["hdr_metadata"].save(
+            outdir / f"{fname.stem}__{clip_str}_hdr_metadata.json")
+        data["sdr_metadata"].save(
+            outdir / f"{fname.stem}__{clip_str}_sdr_metadata.json")
 
     def hdr_to_gainmap_batched(
             self,
@@ -118,11 +122,25 @@ class App:
         else:
             fnames = list(Path().glob(input_glob_pattern))
         assert len(fnames) > 0, f"No files found from {input_glob_pattern}"
-        args = [(fname, outdir, clip_percentile, min_max_quantile,
-                 affine_min, affine_max, hdr_offset, sdr_offset,
-                 min_content_boost, max_content_boost, map_gamma,
-                 hdr_capacity_min, hdr_capacity_max, c3, cuda)
-                for fname in fnames]
+
+        # Convert all paths to absolute paths
+        fnames = [Path(f).absolute() for f in fnames]
+
+        common_parent = Path(commonpath([str(f) for f in fnames]))
+        logger.info(f"Found common parent directory: {common_parent}")
+
+        args = []
+        for fname in fnames:
+            rel_path = Path(relpath(fname.parent, common_parent))
+            out_subdir = Path(outdir) / rel_path
+            out_subdir.mkdir(parents=True, exist_ok=True)
+
+            args.append((
+                fname, out_subdir, clip_percentile, min_max_quantile,
+                affine_min, affine_max, hdr_offset, sdr_offset,
+                min_content_boost, max_content_boost, map_gamma,
+                hdr_capacity_min, hdr_capacity_max, c3, cuda
+            ))
         with multiprocessing.Pool(processes=proc) as pool:
             pool.starmap(self.hdr_to_gainmap, args)
 
