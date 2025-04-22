@@ -120,10 +120,12 @@ def load_hdr_image(fname: Path):
     return image, metadata
 
 
-def save_tensor(fname: Path, data: torch.Tensor, torch: bool = False):
-    if torch:
+def save_tensor(fname: Path, data: torch.Tensor, save_torch: bool = False):
+    if save_torch:
+        fname = fname.with_suffix(".pt")
         torch.save(data.cpu(), fname)
     else:
+        fname = fname.with_suffix(".npy")
         np.save(fname, data.cpu().numpy())
 
 

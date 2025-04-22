@@ -41,6 +41,7 @@ class App:
             hdr_capacity_max: float = 4.0,
             c3: bool = False,
             abs_clip: bool = True,
+            save_torch: bool = False,
             cuda: bool = False,):
         if min_content_boost is not None:
             assert isinstance(min_content_boost, tuple), \
@@ -76,10 +77,12 @@ class App:
         outdir.mkdir(parents=True, exist_ok=True)
         clip_str = str(clip_percentile).replace(".", "-")
         save_tensor(
-            outdir / f"{fname.stem}__{clip_str}_gainmap.pt", data["gainmap"])
+            outdir / f"{fname.stem}__{clip_str}_gainmap", data["gainmap"],
+            save_torch=save_torch)
         save_png(outdir / f"{fname.stem}__{clip_str}_gainmap.png",
                  (data["gainmap"] - affine_min) / (affine_max - affine_min))
-        save_tensor(outdir / f"{fname.stem}__{clip_str}_hdr_linear.pt", data["img_hdr_linear"])  # noqa
+        save_tensor(outdir / f"{fname.stem}__{clip_str}_hdr_linear",
+                    data["img_hdr_linear"], save_torch=save_torch)
         save_png(outdir / f"{fname.stem}__{clip_str}_sdr.png", data["img_sdr"])
         data["hdr_metadata"].save(
             outdir / f"{fname.stem}__{clip_str}_hdr_metadata.json")
@@ -183,7 +186,7 @@ class App:
         data = reconstruct_hdr(
             img_sdr, gainmap, hdr_meta, sdr_meta, c3)
         # save_png(outdir / f"{hdr_path.stem}__reconstruction.png", data["img_hdr_recon"], uint16=True)  # noqa
-        save_tensor(outdir / f"{hdr_path.stem}__reconstruction.npy",
+        save_tensor(outdir / f"{hdr_path.stem}__reconstruction",
                     torch.clip(data["img_hdr_recon"] * 65535. + 0.5, 0,
                                65535).to(torch.uint16))
 
