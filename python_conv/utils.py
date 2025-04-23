@@ -656,80 +656,78 @@ def GetReferenceDisplayPeakLuminanceInNits(transfer: OETF) -> float:
 # ==============================================================================
 
 
-def ApplyToneMapping_scalar(x: float,
-                            mode: ToneMapping,
-                            target_nits: float = 100.0,
-                            max_nits: float = 100.0) -> float:
+def ApplyToneMapping(e: torch.Tensor,
+                     mode: ToneMapping,
+                     headroom: float,
+                     is_normalized: bool) -> torch.Tensor:
     if mode == ToneMapping.BASE:
-        x *= target_nits / max_nits
+        e /= headroom
     elif mode == ToneMapping.REINHARD:
-        x = x / (1.0 + x)
+        if is_normalized:
+            e *= headroom
+        max_hdr = e.max()
+        max_sdr = (1. + max_hdr / (headroom * headroom)) / (1. + max_hdr)
+        e *= max_sdr
+        e[e < 0.] = 0.
     elif mode == ToneMapping.GAMMA:
-        x = x ** (1.0 / 2.2)
+        e = e ** (torch.tensor(1.0 / 2.2, dtype=e.dtype, device=e.device))
     elif mode == ToneMapping.FILMIC:
-        A = 2.51
-        B = 0.03
-        C = 2.43
-        D = 0.59
-        E = 0.14
-        x = (x * (A * x + B)) / (x * (C * x + D) + E)
+        A = torch.tensor(2.51, dtype=e.dtype, device=e.device)
+        B = torch.tensor(0.03, dtype=e.dtype, device=e.device)
+        C = torch.tensor(2.43, dtype=e.dtype, device=e.device)
+        D = torch.tensor(0.59, dtype=e.dtype, device=e.device)
+        E = torch.tensor(0.14, dtype=e.dtype, device=e.device)
+        e = (e * (A * e + B)) / (e * (C * e + D) + E)
     elif mode == ToneMapping.ACES:
-        a = 2.51
-        b = 0.03
-        c = 2.43
-        d = 0.59
-        e_val = 0.14
-        adjusted = x * 0.6
-        x = (adjusted * (adjusted + b) * a) / \
+        a = torch.tensor(2.51, dtype=e.dtype, device=e.device)
+        b = torch.tensor(0.03, dtype=e.dtype, device=e.device)
+        c = torch.tensor(2.43, dtype=e.dtype, device=e.device)
+        d = torch.tensor(0.59, dtype=e.dtype, device=e.device)
+        e_val = torch.tensor(0.14, dtype=e.dtype, device=e.device)
+        adjusted = e * torch.tensor(0.6, dtype=e.dtype, device=e.device)
+        e = (adjusted * (adjusted + b) * a) / \
             (adjusted * (adjusted * c + d) + e_val)
     elif mode == ToneMapping.UNCHARTED2:
-        A = 0.15
-        B = 0.50
-        C = 0.10
-        D = 0.20
-        E = 0.02
-        F = 0.30
-        W = 11.2
+        A = torch.tensor(0.15, dtype=e.dtype, device=e.device)
+        B = torch.tensor(0.50, dtype=e.dtype, device=e.device)
+        C = torch.tensor(0.10, dtype=e.dtype, device=e.device)
+        D = torch.tensor(0.20, dtype=e.dtype, device=e.device)
+        E = torch.tensor(0.02, dtype=e.dtype, device=e.device)
+        F = torch.tensor(0.30, dtype=e.dtype, device=e.device)
+        W = torch.tensor(11.2, dtype=e.dtype, device=e.device)
 
-        def uncharted2_tonemap(x_val: float) -> float:
-            return ((x_val * (A * x_val + C * B) + D * E) /
-                    (x_val * (A * x_val + B) + D * F)) - E / F
-        x = uncharted2_tonemap(x) / uncharted2_tonemap(W)
+        def uncharted2_tonemap(e_val: torch.Tensor) -> torch.Tensor:
+            return ((e_val * (A * e_val + C * B) + D * E) /
+                    (e_val * (A * e_val + B) + D * F)) - E / F
+        e = uncharted2_tonemap(e) / uncharted2_tonemap(W)
     elif mode == ToneMapping.DRAGO:
-        bias = 0.85
-        Lwa = 1.0
-        x = torch.log(1 + x) / torch.log(1 + Lwa)
-        x = x ** bias
+        bias = torch.tensor(0.85, dtype=e.dtype, device=e.device)
+        Lwa = torch.tensor(1.0, dtype=e.dtype, device=e.device)
+        e = torch.log(torch.ones_like(e) + e) / \
+            torch.log(torch.ones_like(e) + Lwa)
+        e = e ** bias
     elif mode == ToneMapping.LOTTES:
-        a_val = 1.6
-        mid_in = 0.18
-        mid_out = 0.267
-        t = x * a_val
-        x = t / (t + 1)
-        z = (mid_in * a_val) / (mid_in * a_val + 1)
-        x = x * (mid_out / z)
+        a_val = torch.tensor(1.6, dtype=e.dtype, device=e.device)
+        mid_in = torch.tensor(0.18, dtype=e.dtype, device=e.device)
+        mid_out = torch.tensor(0.267, dtype=e.dtype, device=e.device)
+        t = e * a_val
+        e = t / (t + torch.ones_like(t))
+        z = (mid_in * a_val) / (mid_in * a_val + torch.ones_like(mid_in))
+        e = e * (mid_out / z)
     elif mode == ToneMapping.HABLE:
-        A = 0.22  # Shoulder strength
-        B = 0.30  # Linear strength
-        C = 0.10  # Linear angle
-        D = 0.20  # Toe strength
-        E = 0.01  # Toe numerator
-        F = 0.30  # Toe denominator
-        W = 11.2
+        # Shoulder strength
+        A = torch.tensor(0.22, dtype=e.dtype, device=e.device)
+        B = torch.tensor(0.30, dtype=e.dtype,
+                         device=e.device)  # Linear strength
+        C = torch.tensor(0.10, dtype=e.dtype, device=e.device)  # Linear angle
+        D = torch.tensor(0.20, dtype=e.dtype, device=e.device)  # Toe strength
+        E = torch.tensor(0.01, dtype=e.dtype, device=e.device)  # Toe numerator
+        F = torch.tensor(0.30, dtype=e.dtype,
+                         device=e.device)  # Toe denominator
+        W = torch.tensor(11.2, dtype=e.dtype, device=e.device)
 
-        def hable(x_val: float) -> float:
-            return (x_val * (A * x_val + C * B) + D * E) / (x_val * (A * x_val + B) + D * F) - E / F
-        x = hable(x) / hable(W)
-    # Note: ToneMapping.REINHARD was listed twice in the original code.
-    return x
+        def hable(e_val: torch.Tensor) -> torch.Tensor:
+            return (e_val * (A * e_val + C * B) + D * E) / (e_val * (A * e_val + B) + D * F) - E / F
+        e = hable(e) / hable(W)
 
-
-def ApplyToneMapping(rgb: torch.Tensor, mode: ToneMapping,
-                     target_nits: float = 100.0,
-                     max_nits: float = 100.0) -> torch.Tensor:
-    return torch.tensor(
-        ApplyToneMapping_scalar(rgb[0], mode, target_nits, max_nits),
-        ApplyToneMapping_scalar(rgb[1], mode, target_nits, max_nits),
-        ApplyToneMapping_scalar(rgb[2], mode, target_nits, max_nits),
-        dtype=DTYPE,
-        device=rgb.device)
+    return e

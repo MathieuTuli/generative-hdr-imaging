@@ -71,23 +71,23 @@ class App:
         meta.hdr_capacity_min = hdr_capacity_min
         meta.hdr_capacity_max = hdr_capacity_max
 
-        data = generate_gainmap(img_hdr, meta, abs_clip, c3)
+        data = generate_gainmap(img_hdr=img_hdr, meta=meta,
+                                abs_clip=abs_clip, c3=c3)
 
         outdir = Path(outdir)
         outdir.mkdir(parents=True, exist_ok=True)
-        clip_str = str(clip_percentile).replace(".", "-")
         save_tensor(
-            outdir / f"{fname.stem}__{clip_str}_gainmap", data["gainmap"],
+            outdir / f"{fname.stem}__gainmap", data["gainmap"],
             save_torch=save_torch)
-        save_png(outdir / f"{fname.stem}__{clip_str}_gainmap.png",
+        save_png(outdir / f"{fname.stem}__gainmap.png",
                  (data["gainmap"] - affine_min) / (affine_max - affine_min))
-        save_tensor(outdir / f"{fname.stem}__{clip_str}_hdr_linear",
+        save_tensor(outdir / f"{fname.stem}__hdr_linear",
                     data["img_hdr_linear"], save_torch=save_torch)
-        save_png(outdir / f"{fname.stem}__{clip_str}_sdr.png", data["img_sdr"])
+        save_png(outdir / f"{fname.stem}__sdr.png", data["img_sdr"])
         data["hdr_metadata"].save(
-            outdir / f"{fname.stem}__{clip_str}_hdr_metadata.json")
+            outdir / f"{fname.stem}__hdr_metadata.json")
         data["sdr_metadata"].save(
-            outdir / f"{fname.stem}__{clip_str}_sdr_metadata.json")
+            outdir / f"{fname.stem}__sdr_metadata.json")
 
     def hdr_to_gainmap_batched(
             self,
@@ -183,8 +183,8 @@ class App:
         img_sdr = load_image(sdr_path)
         sdr_meta = ImageMetadata.from_json(sdr_metadata_path)
         gainmap = load_tensor(gainmap_path)
-        data = reconstruct_hdr(
-            img_sdr, gainmap, hdr_meta, sdr_meta, c3)
+        data = reconstruct_hdr(img_sdr=img_sdr, gainmap=gainmap,
+                               hdr_meta=hdr_meta, sdr_meta=sdr_meta, c3=c3)
         # save_png(outdir / f"{hdr_path.stem}__reconstruction.png", data["img_hdr_recon"], uint16=True)  # noqa
         save_tensor(outdir / f"{hdr_path.stem}__reconstruction",
                     torch.clip(data["img_hdr_recon"] * 65535. + 0.5, 0,
@@ -238,7 +238,8 @@ class App:
         gainmap = load_tensor(gainmap_path)
         logger.info(f"Comparing for {gainmap_path}")
         data = compare_hdr_to_uhdr(
-            img_hdr, img_sdr, gainmap, hdr_meta, sdr_meta, c3)
+            img_hdr=img_hdr, img_sdr=img_sdr,
+            gainmap=gainmap, hdr_meta=hdr_meta, sdr_meta=sdr_meta, c3=c3)
         if ret:
             return data
 
