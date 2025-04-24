@@ -290,8 +290,13 @@ def compare_hdr_to_uhdr(img_hdr: torch.Tensor,
     psnr_lum = psnr(img_hdr_lum, img_hdr_recon_lum)
     psnr_img = psnr(img_hdr_norm, img_hdr_recon)
 
-    logger.info(f"PSNR luminance: {psnr_lum}dB")
-    logger.info(f"PSNR image: {psnr_img}dB")
+    if psnr_lum.isnan():
+        logger.info("PSNR luminance was nan")
+    if psnr_img.isnan():
+        logger.info("PSNR image was nan")
+
+    logger.info(f"PSNR luminance: {psnr_lum} dB")
+    logger.info(f"PSNR image: {psnr_img} dB")
 
     return {
         "psnr_lum": psnr_lum,

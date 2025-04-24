@@ -335,6 +335,7 @@ OOTF_GAMMA = 1.2
 
 def HLG_OOTF(e: torch.Tensor, luminance: LuminanceFn) -> torch.Tensor:
     y = luminance(e)
+    y[torch.isclose(y, torch.zeros(1, dtype=DTYPE, device=y.device))] += 1e-7
     return e * (y ** (OOTF_GAMMA - 1.0))
 
 
@@ -346,6 +347,7 @@ def HLG_OOTFApprox(e: torch.Tensor,
 
 def HLG_InvOOTF(e: torch.Tensor, luminance: LuminanceFn) -> torch.Tensor:
     y = luminance(e)
+    y[torch.isclose(y, torch.zeros(1, dtype=DTYPE, device=y.device))] += 1e-7
     return e * (y ** ((1.0 / OOTF_GAMMA) - 1.0))
 
 

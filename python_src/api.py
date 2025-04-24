@@ -275,13 +275,20 @@ class App:
         )
 
         psnrs_lum, psnrs_img = list(), list()
+        results = {}
+        results["results"] = list()
         for hdr, sdr, gainmap, meta in zip(hdrs, sdrs, gainmaps, metas):
             ret = self.compare_reconstruction(
                 hdr, sdr, gainmap, meta, ret=True)
             psnrs_lum.append(ret["psnr_lum"])
             psnrs_img.append(ret["psnr_img"])
+            results["results"].append(
+                {"fname": str(gainmap),
+                 "psnr_lum": ret["psnr_lum"].item(),
+                 "psnr_img": ret["psnr_img"].item()}
+            )
 
-        results = {
+        results.update({
             "hdrs_glob_pattern": hdrs_glob_pattern,
             "sdrs_glob_pattern": sdrs_glob_pattern,
             "metadatas_glob_pattern": metadatas_glob_pattern,
@@ -290,7 +297,7 @@ class App:
             "std_psnr_lum": np.std(psnrs_lum).item(),
             "mean_psnr_img": np.mean(psnrs_img).item(),
             "std_psnr_img": np.std(psnrs_img).item(),
-        }
+        })
         logger.info(f"Mean PSNR Lum: {results['mean_psnr_lum']}")
         logger.info(f"STD PSNR Lum: {results['std_psnr_lum']}")
         logger.info(f"Mean PSNR Image: {results['mean_psnr_img']}")
