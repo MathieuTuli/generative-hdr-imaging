@@ -93,7 +93,6 @@ def apply_gain(e: torch.Tensor,
 
 def generate_gainmap(img_hdr: torch.Tensor,
                      meta: ImageMetadata,
-                     abs_clip: bool = True,
                      c3: bool = False
                      ) -> dict[str, torch.Tensor | ImageMetadata]:
     hdr_inv_oetf = utils.GetInvOETFFn(meta.oetf)

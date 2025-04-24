@@ -40,7 +40,6 @@ class App:
             hdr_capacity_min: float = 1.0,
             hdr_capacity_max: float = 4.0,
             c3: bool = False,
-            abs_clip: bool = True,
             save_torch: bool = False,
             cuda: bool = False,):
         """
@@ -75,8 +74,7 @@ class App:
         meta.hdr_capacity_min = hdr_capacity_min
         meta.hdr_capacity_max = hdr_capacity_max
 
-        data = generate_gainmap(img_hdr=img_hdr, meta=meta,
-                                abs_clip=abs_clip, c3=c3)
+        data = generate_gainmap(img_hdr=img_hdr, meta=meta, c3=c3)
 
         if outdir is None:
             return data
@@ -114,6 +112,7 @@ class App:
             hdr_capacity_min: float = 1.0,
             hdr_capacity_max: float = 4.0,
             c3: bool = False,
+            save_torch: bool = False,
             cuda: bool = False,):
         if min_content_boost is not None:
             assert isinstance(min_content_boost, tuple), \
@@ -156,7 +155,7 @@ class App:
                 fname, out_subdir, hdr_exposure_bias, min_max_quantile,
                 affine_min, affine_max, hdr_offset, sdr_offset,
                 min_content_boost, max_content_boost, map_gamma,
-                hdr_capacity_min, hdr_capacity_max, c3, cuda
+                hdr_capacity_min, hdr_capacity_max, c3, save_torch, cuda
             ))
         with multiprocessing.Pool(processes=proc) as pool:
             pool.starmap(self.hdr_to_gainmap, args)
