@@ -145,9 +145,9 @@ SRGB_CR = 2.0 * (1.0 - SRGB_R)
 def sRGB_RGBToYUV(e_gamma: torch.Tensor) -> torch.Tensor:
     y_gamma = sRGBLuminance(e_gamma)
     return torch.cat(
-        y_gamma,
-        ((e_gamma[:, :, 2:3] - y_gamma) / SRGB_CB),
-        ((e_gamma[:, :, 0:1] - y_gamma) / SRGB_CR), dim=2)
+        [y_gamma,
+         ((e_gamma[:, :, 2:3] - y_gamma) / SRGB_CB),
+         ((e_gamma[:, :, 0:1] - y_gamma) / SRGB_CR)], dim=2)
 
 
 SRGB_GCB = SRGB_B * SRGB_CB / SRGB_G
@@ -660,13 +660,14 @@ def ApplyToneMapping(e: torch.Tensor,
                      mode: ToneMapping,
                      headroom: float,
                      is_normalized: bool) -> torch.Tensor:
+    if is_normalized:
+        e = e * headroom
+
     if mode == ToneMapping.BASE:
-        e /= headroom
+        e = e * headroom
     elif mode == ToneMapping.REINHARD:
-        if is_normalized:
-            e *= headroom
         max_hdr = e.max()
-        max_sdr = (1. + max_hdr / (headroom * headroom)) / (1. + max_hdr)
+        max_sdr = max_hdr * (1. + (max_hdr / (headroom * headroom))) / (1. + max_hdr)
         e *= max_sdr
         e[e < 0.] = 0.
     elif mode == ToneMapping.GAMMA:
@@ -729,5 +730,4 @@ def ApplyToneMapping(e: torch.Tensor,
         def hable(e_val: torch.Tensor) -> torch.Tensor:
             return (e_val * (A * e_val + C * B) + D * E) / (e_val * (A * e_val + B) + D * F) - E / F
         e = hable(e) / hable(W)
-
     return e

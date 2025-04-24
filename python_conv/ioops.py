@@ -145,12 +145,12 @@ def save_png(fname: Path, data: np.ndarray, uint16: bool = False):
             data = cv2.cvtColor(
                 torch.clip(data * 65535. + 0.5, 0,
                            65535).to(torch.uint16).cpu().numpy(),
-                cv2.COLOR_BGR2RGB).astype(np.uint16)
+                cv2.COLOR_RGB2BGR).astype(np.uint16)
         else:
             data = cv2.cvtColor(
                 torch.clip(data * 255. + 0.5, 0,
                            255).to(torch.uint8).cpu().numpy(),
-                cv2.COLOR_BGR2RGB)
+                cv2.COLOR_RGB2BGR)
     if uint16:
         imageio.imwrite(str(fname), data)
     else:

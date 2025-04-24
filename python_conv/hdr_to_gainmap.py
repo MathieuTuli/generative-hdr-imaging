@@ -91,6 +91,50 @@ def apply_gain(e: torch.Tensor,
     return recompute_hdr_luminance(e, log_boost, hdr_offset, sdr_offset)
 
 
+def plot_image_with_rgb_values(img: torch.Tensor):
+    """
+    Plot an image with interactive cursor showing RGB values.
+
+    Args:
+        img: torch.Tensor of shape (H, W, C) with values in [0, 1]
+    """
+    import matplotlib.pyplot as plt
+
+    # Convert tensor to numpy array
+    if torch.is_tensor(img):
+        img_np = img.cpu().numpy()
+    else:
+        img_np = img
+
+    # Create the figure and axis
+    fig, ax = plt.subplots()
+    im = ax.imshow(img_np)
+
+    # Create text annotation that will be updated
+    annot = ax.annotate("", xy=(0, 0), xytext=(10, 10), textcoords="offset points",
+                        bbox=dict(boxstyle="round", fc="w",
+                                  ec="0.5", alpha=0.9),
+                        fontsize=9)
+    annot.set_visible(False)
+
+    def update_annot(event):
+        if event.inaxes == ax:
+            x, y = int(event.xdata), int(event.ydata)
+            if 0 <= x < img_np.shape[1] and 0 <= y < img_np.shape[0]:
+                rgb = img_np[y, x]
+                annot.xy = (x, y)
+                text = f'RGB: ({rgb[0]:.3f}, {rgb[1]:.3f}, {rgb[2]:.3f})'
+                annot.set_text(text)
+                annot.set_visible(True)
+                fig.canvas.draw_idle()
+        else:
+            annot.set_visible(False)
+            fig.canvas.draw_idle()
+
+    fig.canvas.mpl_connect('motion_notify_event', update_annot)
+    plt.show()
+
+
 def generate_gainmap(img_hdr: torch.Tensor,
                      meta: ImageMetadata,
                      abs_clip: bool = True,
@@ -98,7 +142,8 @@ def generate_gainmap(img_hdr: torch.Tensor,
                      ) -> dict[str, torch.Tensor | ImageMetadata]:
     hdr_inv_oetf = utils.GetInvOETFFn(meta.oetf)
     hdr_ootf = utils.GetOOTFFn(meta.oetf)
-    hdr_gamut_conv = utils.GetGamutConversionFn(utils.Gamut.BT2100, meta.gamut)
+    hdr_gamut_conv = utils.GetGamutConversionFn(meta.gamut,
+                                                utils.Gamut.BT2100)
     hdr_luminance_fn = utils.GetLuminanceFn(meta.gamut)
     bt2100_luminance_fn = utils.GetLuminanceFn(utils.Gamut.BT2100)
     hdr_peak_nits = utils.GetReferenceDisplayPeakLuminanceInNits(meta.oetf)
@@ -114,12 +159,15 @@ def generate_gainmap(img_hdr: torch.Tensor,
         f"Image min/max/mean {img_hdr.to(DTYPE).min()}/" +
         f"{img_hdr.to(DTYPE).max()}/{img_hdr.to(DTYPE).mean()}")
 
-    img_hdr_norm = img_hdr.to(DTYPE) / float((1 << meta.bit_depth) - 1)
+    if meta.oetf != utils.OETF.LINEAR:
+        img_hdr_norm = img_hdr.to(DTYPE) / float((1 << meta.bit_depth) - 1)
+    else:
+        img_hdr_norm = img_hdr.to(DTYPE)
 
     img_hdr_lin = hdr_inv_oetf(img_hdr_norm)
     img_hdr_lin = hdr_ootf(img_hdr_lin, hdr_luminance_fn)
     img_hdr_lin = hdr_gamut_conv(img_hdr_lin)
-    img_hdr_lin[img_hdr_lin < 0.] = 0.
+    img_hdr_lin[img_hdr_lin < 0] = 0.
 
     if abs_clip:
         clip_value = torch.tensor(meta.clip_percentile,
@@ -128,13 +176,43 @@ def generate_gainmap(img_hdr: torch.Tensor,
     else:
         clip_value = torch.quantile(img_hdr_lin.reshape(-1),
                                     meta.clip_percentile)
+
     logger.debug(
         f"HDR {meta.clip_percentile}th-percentile clip value: {clip_value}")
 
-    img_sdr = sdr_gamut_conv(img_hdr_lin)
-    img_sdr[img_sdr < 0.] = 0.
-    img_sdr = torch.minimum(img_sdr, clip_value) / clip_value
-    img_sdr = sdr_oetf(img_sdr)
+    img_hdr_lin_tonemapped = torch.minimum(
+        img_hdr_lin, clip_value) / clip_value
+
+    img_hdr_lin_tonemapped = utils.ApplyToneMapping(
+        img_hdr_lin_tonemapped,
+        utils.ToneMapping.REINHARD,
+        hdr_peak_nits / utils.SDR_WHITE_NITS,
+        meta.oetf != utils.OETF.LINEAR)
+
+    img_sdr_lin = sdr_gamut_conv(img_hdr_lin_tonemapped)
+
+    def perceptual_gamut_compression(
+            rgb: torch.Tensor,
+            peak: float = 1.0,
+            slope_rgb: tuple[float, float, float] = (0., 6., 6.)
+    ) -> torch.Tensor:
+        exc = torch.clamp(rgb - peak, 0.0)
+        slope = torch.tensor(slope_rgb,
+                             dtype=rgb.dtype,
+                             device=rgb.device)
+
+        comp = torch.clamp(exc * slope, 0.0, 1.0)
+
+        yuv = utils.sRGB_RGBToYUV(rgb)
+        # chroma = rgb - Y                                   # signed chroma
+        # rgb_cmp = Y + chroma * (1.0 - comp)                # squash chroma
+        yuv *= (1 - comp)
+        rgb = utils.sRGB_YUVToRGB(yuv)
+        return rgb.clamp(0.0, peak)
+
+    # img_sdr_lin = perceptual_gamut_compression(img_sdr_lin)
+    img_sdr = sdr_oetf(img_sdr_lin)
+    img_sdr = torch.clamp(img_sdr, 0., 1.)
 
     img_sdr_lin = torch.clip(img_sdr * 255.0 + 0.5, 0, 255).to(torch.uint8)
     img_sdr_lin = img_sdr_lin.to(DTYPE) / 255.0
@@ -144,9 +222,9 @@ def generate_gainmap(img_hdr: torch.Tensor,
 
     if c3:
         img_sdr_lin *= utils.SDR_WHITE_NITS
-        img_hdr_lin *= hdr_peak_nits
+        img_hdr_nits = img_hdr_lin * hdr_peak_nits
         gainmap = compute_gain(
-            img_hdr_lin, img_sdr_lin,
+            img_hdr_nits, img_sdr_lin,
             hdr_offset=meta.hdr_offset,
             sdr_offset=meta.sdr_offset,
             max_stops=2.3 if meta.oetf == utils.OETF.HLG else 5.6).to(DTYPE)
@@ -251,7 +329,10 @@ def compare_hdr_to_uhdr(img_hdr: torch.Tensor,
     sdr_hdr_gamut_conv = utils.GetGamutConversionFn(
         src_gamut=sdr_meta.gamut, dst_gamut=utils.Gamut.BT2100)
 
-    img_hdr_norm = img_hdr.to(DTYPE) / float((1 << hdr_meta.bit_depth) - 1)
+    if hdr_meta.oetf != utils.OETF.LINEAR:
+        img_hdr_norm = img_hdr.to(DTYPE) / float((1 << hdr_meta.bit_depth) - 1)
+    else:
+        img_hdr_norm = img_hdr.to(DTYPE) / img_hdr.to(DTYPE).max()
     img_sdr_norm = img_sdr.to(DTYPE) / float((1 << sdr_meta.bit_depth) - 1)
 
     img_hdr_lin = hdr_inv_oetf(img_hdr_norm)
@@ -311,7 +392,8 @@ def reconstruct_hdr(img_sdr: torch.Tensor,
     sdr_hdr_gamut_conv = utils.GetGamutConversionFn(
         src_gamut=sdr_meta.gamut, dst_gamut=utils.Gamut.BT2100)
 
-    img_sdr_norm = img_sdr.to(DTYPE) / float((1 << sdr_meta.bit_depth) - 1)
+    if hdr_meta.oetf != utils.OETF.LINEAR:
+        img_sdr_norm = img_sdr.to(DTYPE) / float((1 << sdr_meta.bit_depth) - 1)
 
     img_sdr_lin = sdr_inv_oetf(img_sdr_norm)
     img_sdr_lin = sdr_hdr_gamut_conv(img_sdr_lin)
