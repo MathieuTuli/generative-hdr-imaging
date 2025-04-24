@@ -19,8 +19,11 @@ from hdr_to_gainmap import (generate_gainmap,
 
 
 class App:
-    def __init__(self, debug: bool = False):
-        if not debug:
+    def __init__(self, suppress: bool = False, debug: bool = False):
+        if suppress:
+            logger.remove()
+            logger.add(sys.stderr, level="WARNING")
+        elif not debug:
             logger.remove()
             logger.add(sys.stderr, level="INFO")
 
