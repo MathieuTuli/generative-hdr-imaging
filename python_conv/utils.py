@@ -656,6 +656,20 @@ def GetReferenceDisplayPeakLuminanceInNits(transfer: OETF) -> float:
 # ==============================================================================
 
 
+def perceptual_gamut_compression(rgb: torch.Tensor,
+                                 peak: float = 1.0,
+                                 slope: float = 6.0,
+                                 knee: float = 0.90) -> torch.Tensor:
+    yuv = sRGB_RGBToYUV(rgb)
+    y = yuv[..., 0]
+
+    exc = torch.clamp((y - knee*peak) / (peak*(1 - knee) + 1e-6), 0.0, 1.0)
+    comp = torch.clamp(exc * slope, 0.0, 1.0)[..., None]
+
+    yuv[..., 1:] *= 1.0 - comp
+    return sRGB_YUVToRGB(yuv).clamp(0.0, peak)
+
+
 def ApplyToneMapping(e: torch.Tensor,
                      mode: ToneMapping,
                      headroom: float,
@@ -667,7 +681,8 @@ def ApplyToneMapping(e: torch.Tensor,
         e = e * headroom
     elif mode == ToneMapping.REINHARD:
         max_hdr = e.max()
-        max_sdr = max_hdr * (1. + (max_hdr / (headroom * headroom))) / (1. + max_hdr)
+        max_sdr = max_hdr * \
+            (1. + (max_hdr / (headroom * headroom))) / (1. + max_hdr)
         e *= max_sdr
         e[e < 0.] = 0.
     elif mode == ToneMapping.GAMMA:

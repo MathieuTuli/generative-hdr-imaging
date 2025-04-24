@@ -91,50 +91,6 @@ def apply_gain(e: torch.Tensor,
     return recompute_hdr_luminance(e, log_boost, hdr_offset, sdr_offset)
 
 
-def plot_image_with_rgb_values(img: torch.Tensor):
-    """
-    Plot an image with interactive cursor showing RGB values.
-
-    Args:
-        img: torch.Tensor of shape (H, W, C) with values in [0, 1]
-    """
-    import matplotlib.pyplot as plt
-
-    # Convert tensor to numpy array
-    if torch.is_tensor(img):
-        img_np = img.cpu().numpy()
-    else:
-        img_np = img
-
-    # Create the figure and axis
-    fig, ax = plt.subplots()
-    im = ax.imshow(img_np)
-
-    # Create text annotation that will be updated
-    annot = ax.annotate("", xy=(0, 0), xytext=(10, 10), textcoords="offset points",
-                        bbox=dict(boxstyle="round", fc="w",
-                                  ec="0.5", alpha=0.9),
-                        fontsize=9)
-    annot.set_visible(False)
-
-    def update_annot(event):
-        if event.inaxes == ax:
-            x, y = int(event.xdata), int(event.ydata)
-            if 0 <= x < img_np.shape[1] and 0 <= y < img_np.shape[0]:
-                rgb = img_np[y, x]
-                annot.xy = (x, y)
-                text = f'RGB: ({rgb[0]:.3f}, {rgb[1]:.3f}, {rgb[2]:.3f})'
-                annot.set_text(text)
-                annot.set_visible(True)
-                fig.canvas.draw_idle()
-        else:
-            annot.set_visible(False)
-            fig.canvas.draw_idle()
-
-    fig.canvas.mpl_connect('motion_notify_event', update_annot)
-    plt.show()
-
-
 def generate_gainmap(img_hdr: torch.Tensor,
                      meta: ImageMetadata,
                      abs_clip: bool = True,
@@ -191,26 +147,7 @@ def generate_gainmap(img_hdr: torch.Tensor,
 
     img_sdr_lin = sdr_gamut_conv(img_hdr_lin_tonemapped)
 
-    def perceptual_gamut_compression(
-            rgb: torch.Tensor,
-            peak: float = 1.0,
-            slope_rgb: tuple[float, float, float] = (0., 6., 6.)
-    ) -> torch.Tensor:
-        exc = torch.clamp(rgb - peak, 0.0)
-        slope = torch.tensor(slope_rgb,
-                             dtype=rgb.dtype,
-                             device=rgb.device)
-
-        comp = torch.clamp(exc * slope, 0.0, 1.0)
-
-        yuv = utils.sRGB_RGBToYUV(rgb)
-        # chroma = rgb - Y                                   # signed chroma
-        # rgb_cmp = Y + chroma * (1.0 - comp)                # squash chroma
-        yuv *= (1 - comp)
-        rgb = utils.sRGB_YUVToRGB(yuv)
-        return rgb.clamp(0.0, peak)
-
-    # img_sdr_lin = perceptual_gamut_compression(img_sdr_lin)
+    # img_sdr_lin = utils.perceptual_gamut_compression(img_sdr_lin)
     img_sdr = sdr_oetf(img_sdr_lin)
     img_sdr = torch.clamp(img_sdr, 0., 1.)
 
