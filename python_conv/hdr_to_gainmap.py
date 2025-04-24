@@ -283,13 +283,7 @@ def compare_hdr_to_uhdr(img_hdr: torch.Tensor,
 
     img_sdr_lin = sdr_inv_oetf(img_sdr_norm)
     img_sdr_lin = sdr_hdr_gamut_conv(img_sdr_lin)
-    img_hdr_recon = apply_gain(
-        img_sdr_lin * utils.SDR_WHITE_NITS, gainmap, sdr_meta.map_gamma,
-        sdr_meta.min_content_boost, sdr_meta.max_content_boost,
-        sdr_meta.hdr_offset, sdr_meta.sdr_offset,
-        sdr_meta.affine_min, sdr_meta.affine_max)
-    img_hdr_recon /= hdr_peak_nits
-    img_hdr_recon = torch.clip(img_hdr_recon, 0., 1.)
+    img_hdr_recon = reconstruct_hdr(img_sdr, gainmap, hdr_meta, sdr_meta, c3)["img_hdr_recon"]
 
     if c3:
         img_sdr_lum = img_sdr_lin * utils.SDR_WHITE_NITS
@@ -304,7 +298,7 @@ def compare_hdr_to_uhdr(img_hdr: torch.Tensor,
     img_hdr_recon_lum /= hdr_peak_nits
 
     psnr_lum = psnr(img_hdr_lum, img_hdr_recon_lum)
-    psnr_img = psnr(img_hdr_lin, img_hdr_recon)
+    psnr_img = psnr(img_hdr_norm, img_hdr_recon)
 
     logger.info(f"PSNR luminance: {psnr_lum}dB")
     logger.info(f"PSNR image: {psnr_img}dB")
