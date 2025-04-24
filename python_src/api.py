@@ -27,7 +27,7 @@ class App:
     def hdr_to_gainmap(
             self,
             fname: str,
-            outdir: str,
+            outdir: None | str = None,
             hdr_exposure_bias: float = 0.0,
             min_max_quantile: float = 0.0,
             affine_min: float = -1.,
@@ -43,6 +43,10 @@ class App:
             abs_clip: bool = True,
             save_torch: bool = False,
             cuda: bool = False,):
+        """
+        - outdir: None | str - if None - will return the data - used for
+            in loop loading
+        """
         if min_content_boost is not None:
             assert isinstance(min_content_boost, tuple), \
                 f"Got {min_content_boost}"
@@ -73,6 +77,9 @@ class App:
 
         data = generate_gainmap(img_hdr=img_hdr, meta=meta,
                                 abs_clip=abs_clip, c3=c3)
+
+        if outdir is None:
+            return data
 
         outdir = Path(outdir)
         outdir.mkdir(parents=True, exist_ok=True)
