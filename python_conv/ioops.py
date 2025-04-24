@@ -22,7 +22,7 @@ class ImageMetadata:
     gamut: Gamut
     oetf: OETF
     bit_depth: int
-    clip_percentile: float = 1.0
+    hdr_exposure_bias: float = 0.0
     min_max_quantile: float = 0.0
     affine_min: float = -1
     affine_max: float = 1
@@ -31,8 +31,8 @@ class ImageMetadata:
     min_content_boost: tuple[float, float, float] = (1.0, 1.0, 1.0)
     max_content_boost: tuple[float, float, float] = (4.0, 4.0, 4.0)
     map_gamma: tuple[float, float, float] = (1.0, 1.0, 1.0)
-    hdr_capacity_min: float = 1.0
-    hdr_capacity_max: float = 4.0
+    hdr_capacity_min: float = 0.0
+    hdr_capacity_max: float = 2.0
 
     def save(self, filepath: Path | str) -> None:
         data = asdict(self)

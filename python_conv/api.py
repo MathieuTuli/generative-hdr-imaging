@@ -28,7 +28,7 @@ class App:
             self,
             fname: str,
             outdir: str,
-            clip_percentile: float = 0.95,
+            hdr_exposure_bias: float = 0.0,
             min_max_quantile: float = 0.0,
             affine_min: float = -1.,
             affine_max: float = 1.,
@@ -59,7 +59,7 @@ class App:
         img_hdr, meta = load_hdr_image(fname)
         if cuda:
             img_hdr = img_hdr.to("cuda")
-        meta.clip_percentile = clip_percentile
+        meta.hdr_exposure_bias = hdr_exposure_bias
         meta.min_max_quantile = min_max_quantile
         meta.affine_min = affine_min
         meta.affine_max = affine_max
@@ -95,7 +95,7 @@ class App:
             outdir: str,
             proc: int,
             root_dir: str = None,
-            clip_percentile: float = 0.95,
+            hdr_exposure_bias: float = 0.0,
             min_max_quantile: float = 0.0,
             affine_min: float = -1.,
             affine_max: float = 1.,
@@ -146,7 +146,7 @@ class App:
             out_subdir.mkdir(parents=True, exist_ok=True)
 
             args.append((
-                fname, out_subdir, clip_percentile, min_max_quantile,
+                fname, out_subdir, hdr_exposure_bias, min_max_quantile,
                 affine_min, affine_max, hdr_offset, sdr_offset,
                 min_content_boost, max_content_boost, map_gamma,
                 hdr_capacity_min, hdr_capacity_max, c3, cuda

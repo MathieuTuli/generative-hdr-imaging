@@ -125,20 +125,7 @@ def generate_gainmap(img_hdr: torch.Tensor,
     img_hdr_lin = hdr_gamut_conv(img_hdr_lin)
     img_hdr_lin[img_hdr_lin < 0] = 0.
 
-    if abs_clip:
-        clip_value = torch.tensor(meta.clip_percentile,
-                                  dtype=DTYPE,
-                                  device=img_hdr_lin.device)
-    else:
-        clip_value = torch.quantile(img_hdr_lin.reshape(-1),
-                                    meta.clip_percentile)
-
-    logger.debug(
-        f"HDR {meta.clip_percentile}th-percentile clip value: {clip_value}")
-
-    img_hdr_lin_tonemapped = torch.minimum(
-        img_hdr_lin, clip_value) / clip_value
-
+    img_hdr_lin_tonemapped = img_hdr_lin * 2 ** meta.hdr_exposure_bias
     img_hdr_lin_tonemapped = utils.ApplyToneMapping(
         img_hdr_lin_tonemapped,
         utils.ToneMapping.REINHARD,
@@ -147,7 +134,7 @@ def generate_gainmap(img_hdr: torch.Tensor,
 
     img_sdr_lin = sdr_gamut_conv(img_hdr_lin_tonemapped)
 
-    # img_sdr_lin = utils.perceptual_gamut_compression(img_sdr_lin)
+    img_sdr_lin = utils.perceptual_gamut_compression(img_sdr_lin)
     img_sdr = sdr_oetf(img_sdr_lin)
     img_sdr = torch.clamp(img_sdr, 0., 1.)
 
@@ -182,7 +169,7 @@ def generate_gainmap(img_hdr: torch.Tensor,
     min_gain, max_gain = torch.quantile(
         gainmap.reshape(-1, 3),
         torch.tensor([meta.min_max_quantile, 1. - meta.min_max_quantile],
-                     dtype=DTYPE, device=gainmap.device))
+                     dtype=DTYPE, device=gainmap.device), dim=0)
 
     min_gain, max_gain = min_gain.to(DTYPE), max_gain.to(DTYPE)
 
@@ -199,6 +186,9 @@ def generate_gainmap(img_hdr: torch.Tensor,
                                            dtype=DTYPE, device=gainmap.device))
     else:
         meta.max_content_boost = torch.exp2(max_gain).cpu().numpy().tolist()
+
+    meta.hdr_capacity_min = min_gain.min().item()
+    meta.hdr_capacity_max = max_gain.max().item()
 
     max_gain[torch.abs(max_gain - min_gain) < 1.0e-8] += 0.1
 
