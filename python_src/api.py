@@ -252,10 +252,27 @@ class App:
         output_path = Path(output_path)
         assert output_path.suffix == ".json", \
             "Expected output path to be .json"
-        hdrs = sorted(Path().glob(hdrs_glob_pattern))
-        sdrs = sorted(Path().glob(sdrs_glob_pattern))
-        metas = sorted(Path().glob(metadatas_glob_pattern))
-        gainmaps = sorted(Path().glob(gainmaps_glob_pattern))
+        logger.debug(f"hdrs_glob_pattern: {hdrs_glob_pattern}")
+        logger.debug(f"sdrs_glob_pattern: {sdrs_glob_pattern}")
+        logger.debug(f"gainmaps_glob_pattern: {gainmaps_glob_pattern}")
+        logger.debug(f"metadatas_glob_pattern: {metadatas_glob_pattern}")
+        logger.debug(f"output_path: {output_path}")
+        gainmaps = sorted(Path(gainmaps_glob_pattern).parent.glob(
+            Path(gainmaps_glob_pattern).name))
+        valid = set([x.stem.split("__")[0] for x in gainmaps])
+
+        hdrs = sorted(
+            [x for x in Path(hdrs_glob_pattern).parent.glob(
+                Path(hdrs_glob_pattern).name) if x.stem in valid]
+        )
+        sdrs = sorted(
+            [x for x in Path(sdrs_glob_pattern).parent.glob(
+                Path(sdrs_glob_pattern).name) if x.stem.split("__")[0] in valid]
+        )
+        metas = sorted(
+            [x for x in Path(metadatas_glob_pattern).parent.glob(
+                Path(metadatas_glob_pattern).name) if x.stem.split("__")[0] in valid]
+        )
 
         psnrs_lum, psnrs_img = list(), list()
         for hdr, sdr, gainmap, meta in zip(hdrs, sdrs, gainmaps, metas):
