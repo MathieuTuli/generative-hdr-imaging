@@ -205,7 +205,8 @@ class App:
                                 sdrs_glob_pattern: str,
                                 gainmaps_glob_pattern: str,
                                 metadatas_glob_pattern: str,
-                                outdir: str):
+                                outdir: str,
+                                c3: bool = False,):
         logger.debug("Reconstructing for globs:\n" +
                      f"  hdrs_glob_pattern:  {hdrs_glob_pattern}\n" +
                      f"  sdrs_glob_pattern:  {sdrs_glob_pattern}\n" +
@@ -219,7 +220,7 @@ class App:
         gainmaps = sorted(Path().glob(gainmaps_glob_pattern))
 
         for hdr, sdr, gainmap, meta in zip(hdrs, sdrs, gainmaps, metas):
-            self.reconstruct_hdr(hdr, sdr, gainmap, meta, outdir)
+            self.reconstruct_hdr(hdr, sdr, gainmap, meta, outdir, c3)
 
     def compare_reconstruction(
             self,
@@ -258,7 +259,8 @@ class App:
                                        sdrs_glob_pattern: str,
                                        gainmaps_glob_pattern: str,
                                        metadatas_glob_pattern: str,
-                                       output_path: str):
+                                       output_path: str,
+                                       c3: bool = False):
         output_path = Path(output_path)
         assert output_path.suffix == ".json", \
             "Expected output path to be .json"
@@ -289,7 +291,7 @@ class App:
         results["results"] = list()
         for hdr, sdr, gainmap, meta in zip(hdrs, sdrs, gainmaps, metas):
             ret = self.compare_reconstruction(
-                hdr, sdr, gainmap, meta, ret=True)
+                hdr, sdr, gainmap, meta, ret=True, c3=c3)
             psnrs_lum.append(ret["psnr_lum"])
             psnrs_img.append(ret["psnr_img"])
             results["results"].append(

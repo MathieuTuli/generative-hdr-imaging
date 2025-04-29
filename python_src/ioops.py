@@ -131,12 +131,12 @@ def save_tensor(fname: Path, data: torch.Tensor, save_torch: bool = False):
 
 def load_tensor(fname: Path) -> torch.Tensor:
     if fname.suffix == ".npy":
-        arr = torch.from_numpy(np.load(fname))
+        arr = torch.from_numpy(np.load(fname)).to(utils.DTYPE)
         if len(arr.shape) == 2 or (len(arr.shape) == 3 and arr.shape[-1] == 1):
             arr = repeat(arr, "w h -> w h 3")
         return arr
     else:
-        return torch.load(fname, weights_only=False)
+        return torch.load(fname, weights_only=False, dtype=utils.DTYPE)
 
 
 def save_png(fname: Path, data: np.ndarray, uint16: bool = False):
