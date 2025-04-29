@@ -36,9 +36,6 @@ def affine_map_gain(gainlog2: torch.Tensor,
     map_gamma = torch.tensor(map_gamma, dtype=DTYPE, device=gainlog2.device)
     mapped_val = (gainlog2 - min_gainlog2[None, None, ...]) /\
         (max_gainlog2 - min_gainlog2[None, None, ...]) * norm_range + norm_min
-    # REVISIT:
-    # mapped_val = (gainlog2 - min_gainlog2[None, None, ...]) /\
-    #     (max_gainlog2 - min_gainlog2[None, None, ...])
     mapped_val = torch.clip(mapped_val, norm_min, norm_max)
     mapped_val = torch.pow(mapped_val, map_gamma)
     return mapped_val
@@ -63,16 +60,14 @@ def undo_affine_map_gain(gain: torch.Tensor,
                          max_content_boost: tuple[float, float, float],
                          norm_min: float, norm_max: float
                          ) -> torch.Tensor:
-    norm_range = norm_max - norm_min
     map_gamma = torch.tensor(map_gamma, dtype=DTYPE, device=gain.device)
     effective_gain = torch.pow(gain, 1.0 / map_gamma)
+    norm_range = norm_max - norm_min
     unnormalized_gain = (effective_gain - norm_min) / norm_range
     log_min = torch.tensor(np.log2(min_content_boost),
                            dtype=DTYPE, device=gain.device)[None, None, ...]
     log_max = torch.tensor(np.log2(max_content_boost),
                            dtype=DTYPE, device=gain.device)[None, None, ...]
-    # REVISIT:
-    # return torch.lerp(log_min, log_max, effective_gain)
     return torch.lerp(log_min, log_max, unnormalized_gain)
 
 
@@ -272,7 +267,8 @@ def compare_hdr_to_uhdr(img_hdr: torch.Tensor,
 
     img_sdr_lin = sdr_inv_oetf(img_sdr_norm)
     img_sdr_lin = sdr_hdr_gamut_conv(img_sdr_lin)
-    img_hdr_recon = reconstruct_hdr(img_sdr, gainmap, hdr_meta, sdr_meta, c3)["img_hdr_recon"]
+    img_hdr_recon = reconstruct_hdr(
+        img_sdr, gainmap, hdr_meta, sdr_meta, c3)["img_hdr_recon"]
 
     if c3:
         img_sdr_lum = img_sdr_lin * utils.SDR_WHITE_NITS

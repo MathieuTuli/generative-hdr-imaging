@@ -30,11 +30,12 @@ class App:
     def hdr_to_gainmap(
             self,
             fname: str,
+            hdr_exposure_bias: float,
+            affine_min: float,
+            affine_max: float,
+            c3: bool,
             outdir: None | str = None,
-            hdr_exposure_bias: float = 0.0,
             min_max_quantile: float = 0.0,
-            affine_min: float = -1.,
-            affine_max: float = 1.,
             hdr_offset: tuple[float, float, float] = (0.015625, 0.015625, 0.015625),  # noqa
             sdr_offset: tuple[float, float, float] = (0.015625,  0.015625,  0.015625),  # noqa
             min_content_boost: None | tuple[float, float, float] = None,
@@ -42,7 +43,6 @@ class App:
             map_gamma: tuple[float, float, float] = (1.0, 1.0, 1.0),
             hdr_capacity_min: float = 1.0,
             hdr_capacity_max: float = 4.0,
-            c3: bool = False,
             save_torch: bool = False,
             cuda: bool = False,):
         """
@@ -140,7 +140,7 @@ class App:
                 fnames = [root_dir / x.strip() for x in f.readlines()]
         else:
             fnames = [x for x in Path(input_glob_pattern).parent.glob(
-                    Path(input_glob_pattern).name)]
+                Path(input_glob_pattern).name)]
         assert len(fnames) > 0, f"No files found from {input_glob_pattern}"
 
         # Convert all paths to absolute paths
@@ -156,10 +156,10 @@ class App:
             out_subdir.mkdir(parents=True, exist_ok=True)
 
             args.append((
-                fname, out_subdir, hdr_exposure_bias, min_max_quantile,
-                affine_min, affine_max, hdr_offset, sdr_offset,
+                fname, hdr_exposure_bias, affine_min, affine_max, c3,
+                out_subdir, min_max_quantile, hdr_offset, sdr_offset,
                 min_content_boost, max_content_boost, map_gamma,
-                hdr_capacity_min, hdr_capacity_max, c3, save_torch, cuda
+                hdr_capacity_min, hdr_capacity_max, save_torch, cuda
             ))
         with multiprocessing.Pool(processes=proc) as pool:
             pool.starmap(self.hdr_to_gainmap, args)
@@ -171,7 +171,7 @@ class App:
             gainmap_path: Path,
             sdr_metadata_path: Path,
             outdir: Path,
-            c3: bool = False,) -> None:
+            c3: bool,) -> None:
         if isinstance(hdr_path, str):
             hdr_path = Path(hdr_path)
         if isinstance(sdr_path, str):
@@ -206,7 +206,7 @@ class App:
                                 gainmaps_glob_pattern: str,
                                 metadatas_glob_pattern: str,
                                 outdir: str,
-                                c3: bool = False,):
+                                c3: bool,):
         logger.debug("Reconstructing for globs:\n" +
                      f"  hdrs_glob_pattern:  {hdrs_glob_pattern}\n" +
                      f"  sdrs_glob_pattern:  {sdrs_glob_pattern}\n" +
@@ -228,7 +228,7 @@ class App:
             sdr_path: Path,
             gainmap_path: Path,
             sdr_metadata_path: Path,
-            c3: bool = False,
+            c3: bool,
             ret: bool = False) -> dict[str,  torch.Tensor]:
         if isinstance(hdr_path, str):
             hdr_path = Path(hdr_path)
@@ -260,7 +260,7 @@ class App:
                                        gainmaps_glob_pattern: str,
                                        metadatas_glob_pattern: str,
                                        output_path: str,
-                                       c3: bool = False):
+                                       c3: bool):
         output_path = Path(output_path)
         assert output_path.suffix == ".json", \
             "Expected output path to be .json"
