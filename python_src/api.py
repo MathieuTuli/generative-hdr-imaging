@@ -139,7 +139,8 @@ class App:
             with open(input_glob_pattern, "r") as f:
                 fnames = [root_dir / x.strip() for x in f.readlines()]
         else:
-            fnames = list(Path().glob(input_glob_pattern))
+            fnames = [x for x in Path(input_glob_pattern).parent.glob(
+                    Path(input_glob_pattern).name)]
         assert len(fnames) > 0, f"No files found from {input_glob_pattern}"
 
         # Convert all paths to absolute paths
