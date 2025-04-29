@@ -58,6 +58,10 @@ class App:
         assert isinstance(map_gamma, tuple), f"Got {map_gamma}"
         assert isinstance(hdr_offset, tuple), f"Got {hdr_offset}"
         assert isinstance(sdr_offset, tuple), f"Got {sdr_offset}"
+        assert isinstance(hdr_exposure_bias, float), f"Got {hdr_exposure_bias}"
+        assert isinstance(affine_min, float), f"Got {affine_min}"
+        assert isinstance(affine_max, float), f"Got {affine_max}"
+        assert isinstance(min_max_quantile, float), f"Got {min_max_quantile}"
         logger.info(f"Running hdr_to_gainmap for {fname}")
         if isinstance(fname, str):
             fname = Path(fname)
