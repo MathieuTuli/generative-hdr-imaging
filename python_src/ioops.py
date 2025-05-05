@@ -5,7 +5,7 @@ from typing import Any
 import subprocess
 import json
 
-from einops import repeat
+from einops import repeat, rearrange
 from loguru import logger
 import imageio
 
@@ -134,6 +134,8 @@ def load_tensor(fname: Path) -> torch.Tensor:
         arr = torch.from_numpy(np.load(fname)).to(utils.DTYPE)
         if len(arr.shape) == 2 or (len(arr.shape) == 3 and arr.shape[-1] == 1):
             arr = repeat(arr, "w h -> w h 3")
+        if arr.shape[0] == 3:
+            arr = rearrange(arr, "c h w -> h w c")
         return arr
     else:
         return torch.load(fname, weights_only=False, dtype=utils.DTYPE)
