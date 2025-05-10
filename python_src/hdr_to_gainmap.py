@@ -123,7 +123,7 @@ def generate_gainmap(img_hdr: torch.Tensor,
     img_hdr_lin_tonemapped = utils.ApplyToneMapping(
         img_hdr_lin_tonemapped,
         utils.ToneMapping.REINHARD,
-        img_hdr.max() / utils.SDR_WHITE_NITS,
+        hdr_peak_nits / utils.SDR_WHITE_NITS,
         True)
 
     img_sdr_lin = sdr_gamut_conv(img_hdr_lin_tonemapped)
