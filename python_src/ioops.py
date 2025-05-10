@@ -96,7 +96,10 @@ def load_hdr_image(fname: Path):
         raise RuntimeError(f"ExifTool returned an error: {e.stderr}")
 
     bit_depth = metadata_raw.get("BitDepth", 1)
-    oetf = metadata_raw.get("TransferCharacteristics", "Linear")
+    if fname.suffix == ".hdr":
+        oetf = metadata_raw.get("TransferCharacteristics", "Linear")
+    else:
+        oetf = metadata_raw.get("TransferCharacteristics", "HLG")
     if oetf.find("HLG") >= 0 or oetf.find("2020") >= 0:
         oetf = OETF.HLG
     elif oetf.find("PQ") >= 0 or oetf.find("2084") >= 0:
@@ -107,7 +110,10 @@ def load_hdr_image(fname: Path):
         oetf = OETF.LINEAR
     else:
         raise ValueError(f"Unknown TransferCharacteristics {oetf}")
-    gamut = metadata_raw.get("ColorPrimaries", "sRGB")
+    if fname.suffix == ".hdr":
+        gamut = metadata_raw.get("ColorPrimaries", "sRGB")
+    else:
+        gamut = metadata_raw.get("ColorPrimaries", "Bt2100")
     if gamut.find("709") >= 0 or gamut.find("sRGB") >= 0:
         gamut = Gamut.BT709
     elif gamut.find("P3") >= 0 or gamut.find("SMPTE") >= 0:

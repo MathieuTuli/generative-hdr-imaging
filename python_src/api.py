@@ -84,6 +84,8 @@ class App:
         data = generate_gainmap(img_hdr=img_hdr, meta=meta, c3=c3)
 
         if outdir is None:
+            data["img_hdr"] = img_hdr
+            data["hdr_meta"] = meta
             return data
 
         outdir = Path(outdir)
@@ -199,7 +201,8 @@ class App:
         gainmap = load_tensor(gainmap_path)
         data = reconstruct_hdr(img_sdr=img_sdr, gainmap=gainmap,
                                hdr_meta=hdr_meta, sdr_meta=sdr_meta, c3=c3)
-        # save_png(outdir / f"{hdr_path.stem}__reconstruction.png", data["img_hdr_recon"], uint16=True)  # noqa
+        save_png(outdir / f"{hdr_path.stem}__reconstruction_8bit.png",
+                 data["img_hdr_recon"], uint16=False)  # noqa
         save_tensor(outdir / f"{hdr_path.stem}__reconstruction",
                     torch.clip(data["img_hdr_recon"] * 65535. + 0.5, 0,
                                65535).to(torch.uint16))

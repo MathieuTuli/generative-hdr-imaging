@@ -680,7 +680,7 @@ def ApplyToneMapping(e: torch.Tensor,
         e = e * headroom
 
     if mode == ToneMapping.BASE:
-        e = e * headroom
+        e = e
     elif mode == ToneMapping.REINHARD:
         max_hdr = e.max()
         max_sdr = max_hdr * \
