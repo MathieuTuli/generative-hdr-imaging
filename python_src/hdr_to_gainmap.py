@@ -190,6 +190,9 @@ def generate_gainmap(img_hdr: torch.Tensor,
     logger.debug(
         f"min/max gain (exp2): {np.exp2(min_gain)}/{np.exp2(max_gain)}")
 
+    gainmap_q = torch.clip(gainmap * 255 + 0.5, 0, 255) / 255.
+    gainmap_q = affine_map_gain(gainmap_q, min_gain, max_gain, meta.affine_min,
+                                meta.affine_max, meta.map_gamma)
     gainmap = affine_map_gain(gainmap, min_gain, max_gain, meta.affine_min,
                               meta.affine_max, meta.map_gamma)
 
@@ -199,6 +202,7 @@ def generate_gainmap(img_hdr: torch.Tensor,
     sdr_meta.bit_depth = 8
     return {
         "gainmap": gainmap,
+        "gainmap_q": gainmap_q,
         "img_hdr_linear": img_hdr_lin,
         "img_sdr": img_sdr,
         "hdr_metadata": meta,
