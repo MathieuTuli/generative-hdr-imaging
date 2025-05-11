@@ -258,6 +258,7 @@ def compare_hdr_to_uhdr(img_hdr: torch.Tensor,
         img_hdr_norm = img_hdr.to(DTYPE) / float((1 << hdr_meta.bit_depth) - 1)
     else:
         img_hdr_norm = img_hdr.to(DTYPE) / img_hdr.to(DTYPE).max()
+
     img_sdr_norm = img_sdr.to(DTYPE) / float((1 << sdr_meta.bit_depth) - 1)
 
     img_hdr_lin = hdr_inv_oetf(img_hdr_norm)
