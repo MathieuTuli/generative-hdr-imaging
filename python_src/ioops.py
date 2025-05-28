@@ -24,8 +24,8 @@ class ImageMetadata:
     bit_depth: int
     hdr_exposure_bias: float = 0.0
     min_max_quantile: float = 0.0
-    affine_min: float = -1
-    affine_max: float = 1
+    affine_min: float = -1.0
+    affine_max: float = 1.0
     hdr_offset: tuple[float, float, float] = (0.015625, 0.015625, 0.015625)
     sdr_offset: tuple[float, float, float] = (0.015625,  0.015625,  0.015625)
     min_content_boost: tuple[float, float, float] = (1.0, 1.0, 1.0)
@@ -78,7 +78,7 @@ def load_image(fname: Path):
     return image
 
 
-def load_hdr_image(fname: Path):
+def load_image_and_meta(fname: Path, sdr: bool = False):
     image = load_image(fname)
     if image is None:
         raise ValueError(f"Failed to load image from path: {fname}")
@@ -95,11 +95,12 @@ def load_hdr_image(fname: Path):
     except subprocess.CalledProcessError as e:
         raise RuntimeError(f"ExifTool returned an error: {e.stderr}")
 
-    bit_depth = metadata_raw.get("BitDepth", 1)
+    bit_depth = metadata_raw.get("BitDepth", 8)
     if fname.suffix == ".hdr":
         oetf = metadata_raw.get("TransferCharacteristics", "Linear")
     else:
-        oetf = metadata_raw.get("TransferCharacteristics", "HLG")
+        oetf = metadata_raw.get("TransferCharacteristics",
+                                "sRGB" if sdr else "HLG")
     if oetf.find("HLG") >= 0 or oetf.find("2020") >= 0:
         oetf = OETF.HLG
     elif oetf.find("PQ") >= 0 or oetf.find("2084") >= 0:
@@ -113,7 +114,7 @@ def load_hdr_image(fname: Path):
     if fname.suffix == ".hdr":
         gamut = metadata_raw.get("ColorPrimaries", "sRGB")
     else:
-        gamut = metadata_raw.get("ColorPrimaries", "Bt2100")
+        gamut = metadata_raw.get("ColorPrimaries", "sRGB" if sdr else "Bt2100")
     if gamut.find("709") >= 0 or gamut.find("sRGB") >= 0:
         gamut = Gamut.BT709
     elif gamut.find("P3") >= 0 or gamut.find("SMPTE") >= 0:
@@ -179,3 +180,20 @@ def save_json(fname: Path, data: dict[str, Any]):
         fname = new_fname
     with fname.open("w") as f:
         json.dump(data, f, indent=2)
+
+
+def get_fnames_from_glob(glob: str, root_dir: str = None):
+    if Path(glob).is_dir():
+        fnames = list(Path(glob).iterdir())
+    elif Path(glob).is_file():
+        if root_dir is None:
+            logger.warning(
+                "The root dir is set to None, but input is a file.")
+        else:
+            root_dir = Path(root_dir)
+            assert root_dir.exists() and root_dir.is_dir()
+        with open(glob, "r") as f:
+            fnames = [root_dir / x.strip() for x in f.readlines()]
+    else:
+        fnames = [x for x in Path(glob).parent.glob(Path(glob).name)]
+    return fnames

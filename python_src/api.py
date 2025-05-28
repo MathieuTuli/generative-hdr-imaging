@@ -10,7 +10,7 @@ import numpy as np
 import torch
 import fire
 
-from ioops import (ImageMetadata, load_hdr_image,
+from ioops import (ImageMetadata, load_image_and_meta, get_fnames_from_glob,
                    save_png, save_tensor, load_tensor, load_image, save_json)
 from hdr_to_gainmap import (generate_gainmap,
                             compare_hdr_to_uhdr,
@@ -34,6 +34,7 @@ class App:
             affine_min: float,
             affine_max: float,
             c3: bool,
+            sdr_fname: str = None,
             outdir: None | str = None,
             min_max_quantile: float = 0.0,
             hdr_offset: tuple[float, float, float] = (0.015625, 0.015625, 0.015625),  # noqa
@@ -66,7 +67,7 @@ class App:
         if isinstance(fname, str):
             fname = Path(fname)
 
-        img_hdr, meta = load_hdr_image(fname)
+        img_hdr, meta = load_image_and_meta(fname)
         if cuda:
             img_hdr = img_hdr.to("cuda")
         meta.hdr_exposure_bias = hdr_exposure_bias
@@ -81,7 +82,12 @@ class App:
         meta.hdr_capacity_min = hdr_capacity_min
         meta.hdr_capacity_max = hdr_capacity_max
 
-        data = generate_gainmap(img_hdr=img_hdr, meta=meta, c3=c3)
+        img_sdr, sdr_meta = None, None
+        if sdr_fname is not None:
+            img_sdr, sdr_meta = load_image_and_meta(Path(sdr_fname), sdr=True)
+
+        data = generate_gainmap(img_hdr=img_hdr, meta=meta, c3=c3,
+                                img_sdr=img_sdr, sdr_meta=sdr_meta)
 
         if outdir is None:
             data["img_hdr"] = img_hdr
@@ -108,6 +114,7 @@ class App:
             input_glob_pattern: str,
             outdir: str,
             proc: int,
+            sdr_path_glob_pattern: str = None,
             root_dir: str = None,
             hdr_exposure_bias: float = 0.0,
             min_max_quantile: float = 0.0,
@@ -133,20 +140,10 @@ class App:
         assert isinstance(hdr_offset, tuple), f"Got {hdr_offset}"
         assert isinstance(sdr_offset, tuple), f"Got {sdr_offset}"
 
-        if Path(input_glob_pattern).is_dir():
-            fnames = list(Path(input_glob_pattern).iterdir())
-        elif Path(input_glob_pattern).is_file():
-            if root_dir is None:
-                logger.warning(
-                    "The root dir is set to None, but input is a file")
-            else:
-                root_dir = Path(root_dir)
-                assert root_dir.exists() and root_dir.is_dir()
-            with open(input_glob_pattern, "r") as f:
-                fnames = [root_dir / x.strip() for x in f.readlines()]
-        else:
-            fnames = [x for x in Path(input_glob_pattern).parent.glob(
-                Path(input_glob_pattern).name)]
+        fnames = get_fnames_from_glob(input_glob_pattern, root_dir)
+        sdr_fnames = None
+        if sdr_path_glob_pattern is not None:
+            sdr_fnames = get_fnames_from_glob(sdr_path_glob_pattern, root_dir)
         assert len(fnames) > 0, f"No files found from {input_glob_pattern}"
 
         # Convert all paths to absolute paths
@@ -163,8 +160,8 @@ class App:
 
             args.append((
                 fname, hdr_exposure_bias, affine_min, affine_max, c3,
-                out_subdir, min_max_quantile, hdr_offset, sdr_offset,
-                min_content_boost, max_content_boost, map_gamma,
+                sdr_fnames, out_subdir, min_max_quantile, hdr_offset,
+                sdr_offset, min_content_boost, max_content_boost, map_gamma,
                 hdr_capacity_min, hdr_capacity_max, save_torch, cuda
             ))
         with multiprocessing.Pool(processes=proc) as pool:
@@ -195,7 +192,7 @@ class App:
         assert sdr_path.stem.split("__")[0] == gainmap_path.stem.split("__")[0]
         assert sdr_path.stem.split(
             "__")[0] == sdr_metadata_path.stem.split("__")[0]
-        _, hdr_meta = load_hdr_image(hdr_path)
+        _, hdr_meta = load_image_and_meta(hdr_path)
         img_sdr = load_image(sdr_path)
         sdr_meta = ImageMetadata.from_json(sdr_metadata_path)
         gainmap = load_tensor(gainmap_path)
@@ -221,10 +218,10 @@ class App:
                      f"  metadatas_glob_pattern:  {metadatas_glob_pattern}\n")
         outdir = Path(outdir)
         outdir.mkdir(exist_ok=True)
-        hdrs = sorted(Path().glob(hdrs_glob_pattern))
-        sdrs = sorted(Path().glob(sdrs_glob_pattern))
-        metas = sorted(Path().glob(metadatas_glob_pattern))
-        gainmaps = sorted(Path().glob(gainmaps_glob_pattern))
+        hdrs = sorted(get_fnames_from_glob(hdrs_glob_pattern))
+        sdrs = sorted(get_fnames_from_glob(sdrs_glob_pattern))
+        metas = sorted(get_fnames_from_glob(metadatas_glob_pattern))
+        gainmaps = sorted(get_fnames_from_glob(gainmaps_glob_pattern))
 
         for hdr, sdr, gainmap, meta in zip(hdrs, sdrs, gainmaps, metas):
             self.reconstruct_hdr(hdr, sdr, gainmap, meta, outdir, c3)
@@ -250,7 +247,7 @@ class App:
         assert sdr_path.stem.split("__")[0] == gainmap_path.stem.split("__")[0]
         assert sdr_path.stem.split(
             "__")[0] == sdr_metadata_path.stem.split("__")[0]
-        img_hdr, hdr_meta = load_hdr_image(hdr_path)
+        img_hdr, hdr_meta = load_image_and_meta(hdr_path)
         img_sdr = load_image(sdr_path)
         sdr_meta = ImageMetadata.from_json(sdr_metadata_path)
         gainmap = load_tensor(gainmap_path)
@@ -276,22 +273,15 @@ class App:
         logger.debug(f"gainmaps_glob_pattern: {gainmaps_glob_pattern}")
         logger.debug(f"metadatas_glob_pattern: {metadatas_glob_pattern}")
         logger.debug(f"output_path: {output_path}")
-        gainmaps = sorted(Path(gainmaps_glob_pattern).parent.glob(
-            Path(gainmaps_glob_pattern).name))
+        gainmaps = sorted(get_fnames_from_glob(gainmaps_glob_pattern))
         valid = set([x.stem.split("__")[0] for x in gainmaps])
 
-        hdrs = sorted(
-            [x for x in Path(hdrs_glob_pattern).parent.glob(
-                Path(hdrs_glob_pattern).name) if x.stem in valid]
-        )
-        sdrs = sorted(
-            [x for x in Path(sdrs_glob_pattern).parent.glob(
-                Path(sdrs_glob_pattern).name) if x.stem.split("__")[0] in valid]
-        )
-        metas = sorted(
-            [x for x in Path(metadatas_glob_pattern).parent.glob(
-                Path(metadatas_glob_pattern).name) if x.stem.split("__")[0] in valid]
-        )
+        hdrs = sorted([x for x in get_fnames_from_glob(hdrs_glob_pattern)
+                       if x.stem in valid])
+        sdrs = sorted([x for x in get_fnames_from_glob(sdrs_glob_pattern)
+                       if x.stem.split("__")[0] in valid])
+        metas = sorted([x for x in get_fnames_from_glob(metadatas_glob_pattern)
+                        if x.stem.split("__")[0] in valid])
 
         psnrs_lum, psnrs_img = list(), list()
         results = {}

@@ -35,8 +35,8 @@ GAIN_FACTOR_NUMENTRIES = 1 << GAIN_FACTOR_PRECISION
 
 # --- Nominal Display Luminance Values ---
 SDR_WHITE_NITS = 203.0
-HLG_MAX_NITS = 800.0
-PQ_MAX_NITS = 800.0
+HLG_MAX_NITS = 1000.0
+PQ_MAX_NITS = 1000.0
 
 
 class LookUpTable:
