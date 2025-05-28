@@ -74,6 +74,9 @@ class ToneMapping(Enum):
     LOTTES = auto()
     HABLE = auto()
 
+from typing import Literal, Union
+from enum import Enum
+
 
 class Gamut(Enum):
     BT709 = auto()

@@ -14,8 +14,8 @@ from ioops import (ImageMetadata, load_image_and_meta, get_fnames_from_glob,
                    save_png, save_tensor, load_tensor, load_image, save_json)
 from hdr_to_gainmap import (generate_gainmap,
                             compare_hdr_to_uhdr,
-                            reconstruct_hdr
-                            )
+                            reconstruct_hdr)
+from utils import Gamut
 
 
 class App:
@@ -35,6 +35,7 @@ class App:
             affine_max: float,
             c3: bool,
             sdr_fname: str = None,
+            dst_gamut: str = "BT2100",
             outdir: None | str = None,
             min_max_quantile: float = 0.0,
             hdr_offset: tuple[float, float, float] = (0.015625, 0.015625, 0.015625),  # noqa
@@ -87,7 +88,8 @@ class App:
             img_sdr, sdr_meta = load_image_and_meta(Path(sdr_fname), sdr=True)
 
         data = generate_gainmap(img_hdr=img_hdr, meta=meta, c3=c3,
-                                img_sdr=img_sdr, sdr_meta=sdr_meta)
+                                img_sdr=img_sdr, sdr_meta=sdr_meta,
+                                dst_gamut=Gamut[dst_gamut])
 
         if outdir is None:
             data["img_hdr"] = img_hdr
@@ -128,6 +130,7 @@ class App:
             hdr_capacity_min: float = 1.0,
             hdr_capacity_max: float = 4.0,
             c3: bool = False,
+            dst_gamut: str = "BT2100",
             save_torch: bool = False,
             cuda: bool = False,):
         if min_content_boost is not None:
@@ -160,9 +163,9 @@ class App:
 
             args.append((
                 fname, hdr_exposure_bias, affine_min, affine_max, c3,
-                sdr_fnames, out_subdir, min_max_quantile, hdr_offset,
-                sdr_offset, min_content_boost, max_content_boost, map_gamma,
-                hdr_capacity_min, hdr_capacity_max, save_torch, cuda
+                sdr_fnames, dst_gamut, out_subdir, min_max_quantile,
+                hdr_offset, sdr_offset, min_content_boost, max_content_boost,
+                map_gamma, hdr_capacity_min, hdr_capacity_max, save_torch, cuda
             ))
         with multiprocessing.Pool(processes=proc) as pool:
             pool.starmap(self.hdr_to_gainmap, args)
@@ -174,7 +177,9 @@ class App:
             gainmap_path: Path,
             sdr_metadata_path: Path,
             outdir: Path,
-            c3: bool,) -> None:
+            c3: bool,
+            dst_gamut: str = "BT2100",
+    ) -> None:
         if isinstance(hdr_path, str):
             hdr_path = Path(hdr_path)
         if isinstance(sdr_path, str):
@@ -197,7 +202,8 @@ class App:
         sdr_meta = ImageMetadata.from_json(sdr_metadata_path)
         gainmap = load_tensor(gainmap_path)
         data = reconstruct_hdr(img_sdr=img_sdr, gainmap=gainmap,
-                               hdr_meta=hdr_meta, sdr_meta=sdr_meta, c3=c3)
+                               hdr_meta=hdr_meta, sdr_meta=sdr_meta, c3=c3,
+                               dst_gamut=Gamut[dst_gamut])
         save_png(outdir / f"{hdr_path.stem}__reconstruction_8bit.png",
                  data["img_hdr_recon"], uint16=False)  # noqa
         save_tensor(outdir / f"{hdr_path.stem}__reconstruction",
@@ -210,7 +216,9 @@ class App:
                                 gainmaps_glob_pattern: str,
                                 metadatas_glob_pattern: str,
                                 outdir: str,
-                                c3: bool,):
+                                c3: bool,
+                                dst_gamut: str = "BT2100"
+                                ):
         logger.debug("Reconstructing for globs:\n" +
                      f"  hdrs_glob_pattern:  {hdrs_glob_pattern}\n" +
                      f"  sdrs_glob_pattern:  {sdrs_glob_pattern}\n" +
@@ -224,7 +232,8 @@ class App:
         gainmaps = sorted(get_fnames_from_glob(gainmaps_glob_pattern))
 
         for hdr, sdr, gainmap, meta in zip(hdrs, sdrs, gainmaps, metas):
-            self.reconstruct_hdr(hdr, sdr, gainmap, meta, outdir, c3)
+            self.reconstruct_hdr(hdr, sdr, gainmap, meta,
+                                 outdir, c3, dst_gamut)
 
     def compare_reconstruction(
             self,
@@ -233,7 +242,8 @@ class App:
             gainmap_path: Path,
             sdr_metadata_path: Path,
             c3: bool,
-            ret: bool = False) -> dict[str,  torch.Tensor]:
+            ret: bool = False,
+            dst_gamut: str = "BT2100",) -> dict[str,  torch.Tensor]:
         if isinstance(hdr_path, str):
             hdr_path = Path(hdr_path)
         if isinstance(sdr_path, str):
@@ -252,9 +262,10 @@ class App:
         sdr_meta = ImageMetadata.from_json(sdr_metadata_path)
         gainmap = load_tensor(gainmap_path)
         logger.info(f"Comparing for {gainmap_path}")
-        data = compare_hdr_to_uhdr(
-            img_hdr=img_hdr, img_sdr=img_sdr,
-            gainmap=gainmap, hdr_meta=hdr_meta, sdr_meta=sdr_meta, c3=c3)
+        data = compare_hdr_to_uhdr(img_hdr=img_hdr, img_sdr=img_sdr,
+                                   gainmap=gainmap, hdr_meta=hdr_meta,
+                                   sdr_meta=sdr_meta, c3=c3,
+                                   dst_gamut=Gamut[dst_gamut])
         if ret:
             return data
 
@@ -264,7 +275,8 @@ class App:
                                        gainmaps_glob_pattern: str,
                                        metadatas_glob_pattern: str,
                                        output_path: str,
-                                       c3: bool):
+                                       c3: bool,
+                                       dst_gamut: str = "BT2100",):
         output_path = Path(output_path)
         assert output_path.suffix == ".json", \
             "Expected output path to be .json"
