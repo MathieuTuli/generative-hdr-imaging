@@ -117,17 +117,19 @@ def generate_gainmap(img_hdr: torch.Tensor,
         img_hdr_lin = img_hdr.to(DTYPE) / img_hdr.to(DTYPE).max()
 
     img_hdr_lin = hdr_gamut_conv(img_hdr_lin)
-    img_hdr_lin[img_hdr_lin < 0] = 0.
+    img_sdr = torch.clamp(img_hdr_lin, 0., 1.)
 
-    img_hdr_lin_tonemapped = img_hdr_lin * 2 ** meta.hdr_exposure_bias
+    img_hdr_lin_biased = img_hdr_lin * 2 ** meta.hdr_exposure_bias
     # DEPRECATE:
     # img_hdr_lin_tonemapped = utils.ApplyToneMapping(
-    #     img_hdr_lin_tonemapped,
+    #     img_hdr_lin_biased,
     #     utils.ToneMapping.REINHARD,
     #     hdr_peak_nits / utils.SDR_WHITE_NITS,
     #     True)
 
-    img_sdr_lin = sdr_gamut_conv(img_hdr_lin_tonemapped)
+    img_sdr_lin = sdr_gamut_conv(img_hdr_lin_biased)
+    # TODO:
+    # - values from the gamut conversion are still below 1 tho
     # DEPRECATE:
     # img_sdr_lin = utils.perceptual_gamut_compression(img_sdr_lin)
     img_sdr = torch.clamp(img_sdr_lin, 0., 1.)
