@@ -237,12 +237,14 @@ def compare_hdr_to_uhdr(img_hdr: torch.Tensor,
         img_hdr_lin = hdr_ootf(img_hdr_lin, hdr_luminance_fn)
     else:
         img_hdr_lin = img_hdr.to(DTYPE) / img_hdr.to(DTYPE).max()
+        img_hdr_norm = img_hdr_lin.clone()
 
     img_sdr_norm = img_sdr.to(DTYPE) / float((1 << sdr_meta.bit_depth) - 1)
 
     img_hdr_lin = hdr_gamut_conv(img_hdr_lin)
     img_hdr_lin = torch.clamp(img_hdr_lin, 0., 1.)
-    img_hdr_norm = img_hdr_lin.clone()
+    img_hdr_norm = hdr_gamut_conv(img_hdr_norm)
+    img_hdr_norm = torch.clamp(img_hdr_norm, 0., 1.)
     if c3:
         img_hdr_lum = img_hdr_lin
     else:
