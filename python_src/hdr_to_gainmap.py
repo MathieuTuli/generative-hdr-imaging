@@ -124,6 +124,7 @@ def generate_gainmap(img_hdr: torch.Tensor,
 
     if img_sdr is None:
         img_hdr_lin_biased = img_hdr_lin * 2 ** meta.hdr_exposure_bias
+        img_hdr_lin_biased *= hdr_peak_nits / utils.SDR_WHITE_NITS
 
         img_sdr_lin = sdr_gamut_conv(img_hdr_lin_biased)
         img_sdr_lin = torch.clamp(img_sdr_lin, 0., 1.)
